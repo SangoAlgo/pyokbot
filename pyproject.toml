@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyokbot"
+version = "0.1.0"
+description = "A Python library for creating bots in Odnoklassniki (ok.ru) messenger via WebSocket"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    {name = "Vanus"}
+]
+keywords = ["ok.ru", "odnoklassniki", "bot", "messenger", "websocket", "api"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "aiohttp",
+    "requests",
+    "websockets",
+    "munch",
+    "selectolax",
+    "sulguk",
+]
+
+[project.urls]
+Homepage = "https://github.com/vanusdev/pyokbot"
+Source = "https://github.com/vanusdev/pyokbot"
+BugTracker = "https://github.com/vanusdev/pyokbot/issues"
+
+[tool.setuptools.packages.find]
+include = ["pyokbot*"]
