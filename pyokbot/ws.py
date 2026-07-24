@@ -12,8 +12,31 @@ from .logging_config import logger
 
 
 class Ws:
+    """
+    WebSocket connection manager for OK.ru messaging API.
 
-    def __init__(self, login):
+    Handles WebSocket lifecycle, authentication, and routing of incoming messages
+    to registered handlers. Includes automatic reconnection with exponential backoff.
+
+    Attributes:
+        handles_list: List of registered message handlers.
+        authorized: Whether the bot is currently authenticated.
+        socket_reconect_counter: Number of reconnection attempts.
+    """
+
+    PING_INTERVAL: int = 30
+    """Seconds between ping messages to keep connection alive."""
+
+    RECONNECT_DELAY: int = 5
+    """Base delay (seconds) for exponential backoff reconnection."""
+
+    def __init__(self, login: "Login") -> None:
+        """
+        Initialize WebSocket connection handler.
+
+        Args:
+            login: Login instance containing authentication tokens and configuration.
+        """
         self.login = login
         self.handles_list = []
         self._msg_queue: asyncio.Queue = asyncio.Queue()
@@ -32,12 +55,14 @@ class Ws:
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
+                logger.warning(f"Timeout waiting for opcode {opcode}")
                 return None
             try:
                 msg = await asyncio.wait_for(self._rpc_queue.get(), timeout=remaining)
                 if msg.get("opcode") == opcode:
                     return msg
             except asyncio.TimeoutError:
+                logger.warning(f"Timeout waiting for opcode {opcode}")
                 return None
 
     async def start(self, AUTHCODE: str, okweb_token: str):
@@ -48,6 +73,7 @@ class Ws:
             try:
                 await self._ws_loop()
             except asyncio.CancelledError:
+                logger.info("WebSocket connection cancelled")
                 break
             except Exception as e:
                 logger.warning(f"WS disconnected: {e}")
@@ -79,11 +105,14 @@ class Ws:
                     break
         send_lock = asyncio.Lock()
 
-        async def send(ws, pkt: dict):
+        async def send(ws: websockets.WebSocketClientProtocol, pkt: Dict) -> None:
+            """Send a JSON packet with sequence number."""
             async with send_lock:
                 self.seq += 1
                 pkt["seq"] = self.seq
-                await ws.send(json.dumps(pkt, separators=(",", ":"), ensure_ascii=False))
+                await ws.send(
+                    json.dumps(pkt, separators=(",", ":"), ensure_ascii=False)
+                )
 
         async with websockets.connect(
             self.login.WS_URL,

@@ -1,6 +1,5 @@
-<p align="center">
-  <img src="https://placehold.co/600x200/1a1a2e/e94560?text=pyokbot&font=montserrat" alt="pyokbot" width="600">
-</p>
+<!-- markdownlint-disable-file -->
+<div align="center">
 
 <p align="center">
   Python library for Odnoklassniki (ok.ru) bots.<br>
@@ -18,11 +17,14 @@
   ⚠️ Alpha — works, expect rough edges
 </p>
 
+### Минимальный пример
+
 ```python
 import asyncio
 from pyokbot import Vanus
 
 async def main():
+    # Создаём бота с вашим AUTHCODE
     bot = Vanus("YOUR_AUTHCODE")
     await bot.run()
 
@@ -30,7 +32,189 @@ async def main():
     async def ping(message):
         await bot.send_reply(message, "pong!")
 
+    @bot.on_message(commands=["help"])
+    async def cmd_help(message):
+        text = """
+        Доступные команды:
+        /start  — приветствие
+        /help   — этот текст
+        /ping   — проверка
+        /stop   — остановить бота
+        """
+        await bot.send_message(message.chat.id, text)
+
+    # Обработчик всех текстовых сообщений
+    @bot.on_message(filters="user", content_types=["text"])
+    async def echo(message):
+        await bot.send_reply(message, f"Ты написал: {message.text}")
+
+    # Запускаем polling (слушаем сообщения)
     await bot.polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**Запуск:**
+```bash
+python bot.py YOUR_AUTHCODE
+```
+
+---
+
+## 📚 Примеры
+
+### 🖼️ Отправка фото с подписью
+
+```python
+@bot.on_message(commands=["photo"])
+async def send_photo_cmd(message):
+    await bot.send_photo(
+        message.chat.id,
+        photo_file_path="path/to/photo.jpg",
+        caption="<b>Вот ваше фото!</b>",
+        parse_mode="html"
+    )
+```
+
+### 🎬 Отправка видео
+
+```python
+@bot.on_message(commands=["video"])
+async def send_video_cmd(message):
+    await bot.send_video(
+        message.chat.id,
+        video_file_path="path/to/video.mp4",
+        caption="Смотри видео!"
+    )
+```
+
+### 🎙️ Отправка голосового сообщения
+
+```python
+@bot.on_message(commands=["voice"])
+async def send_voice_cmd(message):
+    await bot.send_voice(
+        message.chat.id,
+        voice_file_path="path/to/audio.mp3"
+    )
+```
+
+### 🏷️ HTML-форматирование
+
+```python
+@bot.on_message(commands=["format"])
+async def formatted_message(message):
+    html_text = """
+    <b>Жирный текст</b>
+    <i>Курсив</i>
+    <code>моноширинный</code>
+    <a href="https://ok.ru">Ссылка</a>
+    <h1>Заголовок</h1>
+    """
+    await bot.send_message(
+        message.chat.id,
+        html_text,
+        parse_mode="html"
+    )
+```
+
+### 🎯 Фильтры по типам контента
+
+```python
+# Только фото
+@bot.on_message(filters="user", content_types=["photo"])
+async def handle_photo(message):
+    count = len(message.photo)
+    await bot.send_reply(message, f"📸 Получено {count} фото")
+
+# Только видео
+@bot.on_message(filters="user", content_types=["video"])
+async def handle_video(message):
+    await bot.send_reply(message, "🎬 Получено видео")
+
+# Только голос
+@bot.on_message(filters="user", content_types=["audio"])
+async def handle_audio(message):
+    await bot.send_reply(message, "🎙️ Получено голосовое сообщение")
+```
+
+### 👥 Управление чатом
+
+```python
+@bot.on_message(commands=["chatinfo"])
+async def get_chat_info(message):
+    info = await bot.get_chat_info(message.chat.id)
+    text = f"""
+    📌 <b>Информация о чате:</b>
+    
+    Название: {info['title']}
+    Участников: {info['members']['count']}
+    Сообщений: {info['messages']['count']}
+    """
+    await bot.send_message(message.chat.id, text, parse_mode="html")
+
+# Пин-сообщение
+@bot.on_message(commands=["pin"])
+async def pin_message(message):
+    await bot.pin_chat_message(message.chat.id, message.id)
+    await bot.send_reply(message, "📌 Сообщение закреплено")
+
+# Редактировать сообщение
+@bot.on_message(commands=["edit"])
+async def edit_msg(message):
+    await bot.edit_message_text(
+        message.chat.id,
+        message.id,
+        "✏️ <i>Отредактированное сообщение</i>",
+        parse_mode="html"
+    )
+```
+
+### 👤 Информация о пользователе
+
+```python
+@bot.on_message(commands=["whoami"])
+async def who_am_i(message):
+    user_info = await bot.get_user_info(message.user.id)
+    text = f"""
+    👤 <b>Ваш профиль:</b>
+    
+    Имя: {user_info['name']}
+    ID: {user_info['id']}
+    Статус: {user_info['last_visit']}
+    Аватар: {user_info['avatar_url']}
+    """
+    await bot.send_message(message.chat.id, text, parse_mode="html")
+```
+
+### ⌨️ Эмуляция печатания
+
+```python
+@bot.on_message(commands=["wait"])
+async def typing_effect(message):
+    chat_id = message.chat.id
+    
+    # Показываем "печатает..."
+    await bot.writing_emulation(chat_id)
+    
+    # Имитируем обработку
+    await asyncio.sleep(2)
+    
+    await bot.send_message(chat_id, "✅ Готово!")
+```
+
+### 🔄 Контекстный менеджер
+
+```python
+# Автоматически вызовет bot.run() и bot.stop()
+async def main():
+    async with Vanus("YOUR_AUTHCODE") as bot:
+        @bot.on_message(filters="user")
+        async def handler(message):
+            await bot.send_reply(message, message.text)
+        
+        await bot.polling()
 
 asyncio.run(main())
 ```
@@ -125,7 +309,12 @@ Ready to run bots in the examples folder
 - chat_admin_bot.py — manage chats pin edit kick
 
 ```bash
-python examples/echobot.py YOUR_AUTHCODE
+export OK_AUTHCODE="ваш_authcode"
+```
+
+```python
+import os
+bot = Vanus(os.getenv("OK_AUTHCODE"))
 ```
 
 Docs

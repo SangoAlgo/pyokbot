@@ -9,6 +9,8 @@ import requests
 
 
 class Login:
+    """
+    Manages authentication with OK.ru API.
 
     def __init__(self):
         self.BASE_URL = "https://ok.ru"
@@ -31,6 +33,15 @@ class Login:
         }
 
     def build_session(self, authcode: str) -> requests.Session:
+        """
+        Create an authenticated HTTP session.
+
+        Args:
+            authcode: The AUTHCODE cookie value from OK.ru.
+
+        Returns:
+            Configured requests.Session with headers and cookies.
+        """
         s = requests.Session()
         s.headers.update({
             "User-Agent": self.UA,
@@ -42,6 +53,15 @@ class Login:
         return s
 
     def get_tkn(self, session: requests.Session) -> str:
+        """
+        Extract the internal TKN token from OK.ru.
+
+        Args:
+            session: Authenticated requests.Session.
+
+        Returns:
+            TKN token string, or empty string if extraction failed.
+        """
         try:
             r = session.post(
                 f"{self.BASE_URL}/web-api/upms",
@@ -58,6 +78,16 @@ class Login:
             return ""
 
     def get_okweb_token(self, session: requests.Session, tkn: str) -> str:
+        """
+        Extract the OKWEB authentication token.
+
+        Args:
+            session: Authenticated requests.Session.
+            tkn: The TKN token from get_tkn().
+
+        Returns:
+            OKWEB token string, or empty string if extraction failed.
+        """
         try:
             r = session.post(
                 f"{self.BASE_URL}/web-api/v2/messages/credentials",
@@ -77,9 +107,12 @@ class Login:
             data = r.json()
             token = (data.get("result") or {}).get("token") or data.get("token", "")
             if token:
+                logger.debug("OKWEB token extracted successfully")
                 return token
-        except Exception:
-            pass
+            else:
+                logger.warning("OKWEB token not found in response")
+        except (requests.RequestException, ValueError) as e:
+            logger.error(f"Failed to get OKWEB token: {e}")
         return ""
 
     def start_login(self, authcode: str):
@@ -88,9 +121,15 @@ class Login:
         self.tkn = self.get_tkn(self.session)
         self.okweb_token = self.get_okweb_token(self.session, self.tkn)
         if not self.tkn:
-            raise ValueError("TKN not received — check AUTHCODE validity")
+            raise ValueError(
+                "TKN not received — check AUTHCODE validity. "
+                "Make sure you're using a valid AUTHCODE cookie from ok.ru"
+            )
         if not self.okweb_token:
-            raise ValueError("OKWEB token not received — check AUTHCODE validity")
+            raise ValueError(
+                "OKWEB token not received — check AUTHCODE validity. "
+                "The authentication tokens may have expired."
+            )
 
     async def get_user_info(self, user_id: str) -> dict:
         from selectolax.lexbor import LexborHTMLParser
