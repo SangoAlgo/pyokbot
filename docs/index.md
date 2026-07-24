@@ -21,20 +21,30 @@ async def main():
 asyncio.run(main())
 ```
 
-## What it can do
+## Features
 
-- **Commands** — `@bot.on_message(commands=["start", "help"])` catches `/start` and `/help`
-- **Filters** — route by content type (photo, video, audio, document, text), exact text, or user/bot
-- **Media** — send photos, videos, files, voice messages from URLs or local files
-- **HTML** — bold, italic, code, headings, links, mentions with `parse_mode="html"`
-- **Chat admin** — pin, edit, delete, clear history, change title/photo, kick members
-- **Typing indicator** — show "bot is typing..." before responding
-- **Persistent WebSocket** — instant delivery, auto-reconnect with backoff, user info cache
+| Feature             | What it does                                                |
+| ------------------- | ----------------------------------------------------------- |
+| **Commands**        | `/start`, `/help`, `/ping` — any command you define         |
+| **Filters**         | Route by user/bot, exact text, or content type              |
+| **Media**           | Send photos, videos, files, voice messages                  |
+| **HTML formatting** | Bold, italic, code, headings, links in messages             |
+| **Chat admin**      | Pin, edit, delete, clear history, kick, rename              |
+| **Typing indicator**| Show "bot is typing..." before responding                   |
+| **Auto-reconnect**  | Exponential backoff on WebSocket disconnection              |
+| **User info cache** | Profile data cached for 1 hour to avoid repeated lookups    |
+
+## Why pyokbot?
+
+- **One-of-a-kind** — the only Python library that talks to OK.ru's real-time messaging API
+- **Instant** — WebSocket pushes messages the moment they're sent, no polling interval
+- **Pure async** — built on `asyncio` + `aiohttp` from the ground up
+- **Simple** — one class, one decorator, a handful of send methods; no 500-page manual
 
 ## Next steps
 
-- [Installation](installation.md)
-- [Quick Start](quickstart.md)
-- [API Reference](api-reference.md)
-- [Examples](examples.md)
-- [FAQ](faq.md)
+- [Installation](installation.md) — get your auth code and install the library
+- [Quick Start](quickstart.md) — build your first bot in 5 minutes
+- [Guide](guide/commands.md) — learn every feature step by step
+- [Examples](examples.md) — ready-to-run bots in the repo
+- [FAQ](faq.md) — common questions and troubleshooting

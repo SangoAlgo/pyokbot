@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Python 3.9 or newer.
+- Python 3.9 or newer
 
 ## Install from PyPI
 
@@ -18,23 +18,25 @@ cd pyokbot
 pip install -e .
 ```
 
-## What gets installed
+## Dependencies
 
-pyokbot comes with these dependencies:
+pyokbot relies on these packages — they install automatically:
 
-- `aiohttp` — async HTTP client for API calls and file uploads
-- `requests` — sync HTTP for token retrieval
-- `websockets` — WebSocket client for the OK.ru protocol
-- `munch` — dict-to-object conversion for message attributes
-- `selectolax` — fast HTML parser for scraping profiles
-- `sulguk` — HTML to OK.ru entity conversion
+| Package        | Role                                          |
+| -------------- | --------------------------------------------- |
+| `aiohttp`      | Async HTTP client for API calls and uploads   |
+| `requests`     | Synchronous HTTP for token retrieval          |
+| `websockets`   | WebSocket client for the OK.ru protocol       |
+| `munch`        | Dict-to-object conversion for messages        |
+| `selectolax`   | Fast HTML parser for profile scraping         |
+| `sulguk`       | HTML to OK.ru entity format conversion        |
 
 ## Getting an AUTHCODE
 
-To use pyokbot you need an `AUTHCODE` cookie from ok.ru:
+To use pyokbot you need the `AUTHCODE` cookie from ok.ru:
 
 1. Open a browser and log in to [ok.ru](https://ok.ru)
 2. Open Developer Tools (F12) → Application → Cookies
 3. Find the `AUTHCODE` cookie and copy its value
 
-This is what authorizes your bot to use the messaging API.
+This cookie authorizes your bot to use the messaging API. Keep it private — anyone with your AUTHCODE can send messages as your bot.

@@ -27,6 +27,28 @@ Run it:
 python bot.py
 ```
 
+## Bot lifecycle
+
+Every bot follows the same pattern:
+
+| Step                    | Method           | What happens                                      |
+| ----------------------- | ---------------- | ------------------------------------------------- |
+| Create instance         | `Vanus(auth)`    | Validates auth, sets up WebSocket                  |
+| Connect                 | `await bot.run()` | Opens WebSocket, authorizes, fetches bot profile  |
+| Register handlers       | `@bot.on_message` | Define what your bot responds to                  |
+| Start listening         | `await bot.polling()` | Loop forever, process incoming messages     |
+| Clean up (optional)     | `await bot.stop()` | Close WebSocket, cancel tasks                  |
+
+Or use the context manager:
+
+```python
+async with Vanus("YOUR_AUTHCODE") as bot:
+    @bot.on_message(commands=["ping"])
+    async def ping(message):
+        await bot.send_reply(message, "pong!")
+    await bot.polling()
+```
+
 ## Bot with commands
 
 ```python
@@ -49,6 +71,7 @@ async def main():
     async def cmd_ping(message):
         await bot.send_reply(message, "pong!")
 
+    # Catch-all for non-command messages
     @bot.on_message(filters="user")
     async def fallback(message):
         await bot.send_reply(message, f"Echo: {message.text}")
@@ -58,35 +81,18 @@ async def main():
 asyncio.run(main())
 ```
 
-## Handling media
+## Sending messages
 
-```python
-@bot.on_message(filters="user", content_types=["photo"])
-async def handle_photo(message):
-    await bot.send_reply(message, "Nice photo!")
+| Method                    | Use case                    |
+| ------------------------- | --------------------------- |
+| `send_message(chat_id, text)` | Send to any chat ID     |
+| `send_reply(message, text)` | Reply to an incoming message |
 
-@bot.on_message(filters="user", content_types=["video"])
-async def handle_video(message):
-    await bot.send_message(message.chat.id, "Got a video!")
-
-@bot.on_message(filters="user", content_types=["audio"])
-async def handle_audio(message):
-    await bot.send_message(message.chat.id, "Voice message received!")
-```
-
-## How handlers work
-
-Handlers are checked in the order you register them. The first one that matches wins — the rest are skipped.
-
-```python
-@bot.on_message(commands=["start"])    # checked first
-@bot.on_message(commands=["help"])     # checked second
-@bot.on_message(filters="user")        # catch-all, checked last
-```
+Both accept `parse_mode="html"` for [HTML formatting](guide/formatting.md).
 
 ## The message object
 
-Handlers receive a `Munch` object. You can access fields as attributes:
+Handlers receive a `Munch` object. Access fields as attributes:
 
 ```python
 async def handler(message):
@@ -101,3 +107,12 @@ async def handler(message):
     message.is_reply      # True/False
     message.reply         # the replied-to message, if any
 ```
+
+## Next steps
+
+- [Commands](guide/commands.md) — add `/` handlers to your bot
+- [Filters](guide/filters.md) — control which messages trigger which handlers
+- [Media](guide/media.md) — send photos, videos, files, voice
+- [HTML Formatting](guide/formatting.md) — rich text in messages
+- [Chat Admin](guide/chat-admin.md) — manage chats from your bot
+- [Typing Indicator](guide/typing.md) — show "bot is typing..." before replies

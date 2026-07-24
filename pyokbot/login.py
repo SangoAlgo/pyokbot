@@ -7,10 +7,11 @@ from typing import Optional
 import aiohttp
 import requests
 
+from .logging_config import logger
+
 
 class Login:
-    """
-    Manages authentication with OK.ru API.
+    """Manages authentication with OK.ru API."""
 
     def __init__(self):
         self.BASE_URL = "https://ok.ru"

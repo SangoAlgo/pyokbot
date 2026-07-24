@@ -33,6 +33,13 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Quick Start: quickstart.md
+  - Guide:
+    - Commands: guide/commands.md
+    - Filters: guide/filters.md
+    - Media: guide/media.md
+    - HTML Formatting: guide/formatting.md
+    - Chat Admin: guide/chat-admin.md
+    - Typing Indicator: guide/typing.md
   - API Reference: api-reference.md
   - Examples: examples.md
   - FAQ: faq.md
