@@ -1,92 +1,82 @@
-import json
+from __future__ import annotations
+
 import asyncio
+import json
 import time
+from typing import Optional
+
 import websockets
+
+from .opcodes import MessageOpcode
+from .logging_config import logger
 
 
 class Ws:
 
     def __init__(self, login):
         self.login = login
-
         self.handles_list = []
-        self._msg_queue = asyncio.Queue()
-        self._rpc_queue = asyncio.Queue()
+        self._msg_queue: asyncio.Queue = asyncio.Queue()
+        self._rpc_queue: asyncio.Queue = asyncio.Queue()
         self.bot_info = None
         self.authorized = False
         self.authorized_event = asyncio.Event()
         self.socket_reconect_counter = 0
-        self.login_token = None
-
+        self.login_token: Optional[str] = None
         self.PING_INTERVAL = 30
         self.RECONNECT_DELAY = 5
 
-
-    # === WAIT ===
-    async def wait_for_message(self, opcode: int, timeout: float = 30):
+    async def wait_for_message(self, opcode: int, timeout: float = 30) -> Optional[dict]:
+        """Wait for a message with a specific opcode. Returns None on timeout."""
         deadline = time.time() + timeout
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
                 return None
             try:
-                msg = await asyncio.wait_for(
-                    self._rpc_queue.get(), timeout=remaining
-                )
+                msg = await asyncio.wait_for(self._rpc_queue.get(), timeout=remaining)
                 if msg.get("opcode") == opcode:
                     return msg
             except asyncio.TimeoutError:
                 return None
 
-
-    # === START ===
     async def start(self, AUTHCODE: str, okweb_token: str):
+        """Start the WebSocket connection loop. Reconnects on disconnect."""
         self.AUTHCODE = AUTHCODE
         self.okweb_token = okweb_token
-
         while True:
             try:
                 await self._ws_loop()
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.warning(f"WS disconnected: {e}")
             self.socket_reconect_counter += 1
             delay = min(60, self.RECONNECT_DELAY * (2 ** (self.socket_reconect_counter - 1)))
+            logger.info(f"Reconnecting in {delay}s (attempt {self.socket_reconect_counter})")
             await asyncio.sleep(delay)
 
-
-    # === INFO ===
-    async def get_bot_info(self):
+    async def get_bot_info(self) -> dict:
+        """Wait for authorization and return bot profile info."""
         await self.authorized_event.wait()
         while self.bot_info is None:
             await asyncio.sleep(0.05)
         return self.bot_info
 
-
     async def on_authorized(self, message: dict):
         self.bot_info = message
 
-
-    # === WS LOOP ===
     async def _ws_loop(self):
         self.seq = 0
         self.authorized = False
         self.authorized_event.clear()
         self.login_token = None
-
-        while not self._msg_queue.empty():
-            try:
-                self._msg_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-        while not self._rpc_queue.empty():
-            try:
-                self._rpc_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-
+        for q in (self._msg_queue, self._rpc_queue):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
         send_lock = asyncio.Lock()
 
         async def send(ws, pkt: dict):
@@ -106,11 +96,9 @@ class Ws:
             ping_timeout=10,
             close_timeout=5,
         ) as ws:
-
             self._conn = ws
             last_ping = time.time()
 
-            # === PING ===
             async def ping_loop():
                 nonlocal last_ping
                 try:
@@ -119,27 +107,22 @@ class Ws:
                         if self.authorized and self.login_token:
                             if time.time() - last_ping >= self.PING_INTERVAL:
                                 ts = int(time.time() * 1000)
-                                msg = f"PING {self.login_token} {ts}"
-
                                 async with send_lock:
-                                    await ws.send(msg)
-
+                                    await ws.send(f"PING {self.login_token} {ts}")
                                 last_ping = time.time()
                 except asyncio.CancelledError:
                     pass
                 except Exception:
                     pass
 
-            # === ACTIVITY ===
             async def activ_loop():
                 try:
                     while True:
                         await asyncio.sleep(60)
                         if self.authorized and self.login_token:
                             await send(ws, {
-                                "ver": 10,
-                                "cmd": 0,
-                                "opcode": 1,
+                                "ver": 10, "cmd": 0,
+                                "opcode": MessageOpcode.ACTIVITY,
                                 "payload": {"interactive": True}
                             })
                 except asyncio.CancelledError:
@@ -152,31 +135,22 @@ class Ws:
 
             try:
                 async for raw in ws:
-
                     text = raw if isinstance(raw, str) else raw.decode("utf-8", "ignore")
-
                     try:
                         msg = json.loads(text)
                     except json.JSONDecodeError:
                         continue
-
                     await self._msg_queue.put(msg)
                     await self._rpc_queue.put(msg)
-
                     op = msg.get("opcode")
                     p = msg.get("payload", {})
 
-                    # === HELLO ===
-                    if op == 6:
-
+                    if op == MessageOpcode.HELLO:
                         if self.login_token:
                             ts = int(time.time() * 1000)
                             await ws.send(f"PING {self.login_token} {ts}")
-
                             await send(ws, {
-                                "ver": 10,
-                                "cmd": 0,
-                                "opcode": 19,
+                                "ver": 10, "cmd": 0, "opcode": MessageOpcode.AUTH,
                                 "payload": {
                                     "token": self.login_token,
                                     "chatsCount": 20,
@@ -188,12 +162,9 @@ class Ws:
                                     "interactive": True,
                                 }
                             })
-
                         else:
                             await send(ws, {
-                                "ver": 10,
-                                "cmd": 0,
-                                "opcode": 23,
+                                "ver": 10, "cmd": 0, "opcode": MessageOpcode.TOKEN,
                                 "payload": {
                                     "token": self.okweb_token,
                                     "tokenType": "OKWEB",
@@ -202,17 +173,12 @@ class Ws:
                                 }
                             })
 
-                    # === TOKEN ===
-                    elif op == 23:
+                    elif op == MessageOpcode.TOKEN:
                         self.login_token = p.get("token")
-
                         ts = int(time.time() * 1000)
                         await ws.send(f"PING {self.login_token} {ts}")
-
                         await send(ws, {
-                            "ver": 10,
-                            "cmd": 0,
-                            "opcode": 19,
+                            "ver": 10, "cmd": 0, "opcode": MessageOpcode.AUTH,
                             "payload": {
                                 "token": self.login_token,
                                 "chatsCount": 20,
@@ -225,15 +191,14 @@ class Ws:
                             }
                         })
 
-                    # === AUTH ===
-                    elif op == 19:
+                    elif op == MessageOpcode.AUTH:
                         if p.get("error"):
                             raise Exception("AUTH FAILED")
-
                         self.authorized = True
                         self.socket_reconect_counter = 0
                         self.authorized_event.set()
                         await self.on_authorized(p)
+                        logger.info("WebSocket authorized successfully")
 
             finally:
                 ping_task.cancel()

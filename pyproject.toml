@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyokbot"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Python library for creating bots in Odnoklassniki (ok.ru) messenger via WebSocket"
 readme = "README.md"
 license = "MIT"

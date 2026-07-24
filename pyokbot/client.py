@@ -1,46 +1,57 @@
+from __future__ import annotations
+
 import asyncio
 import json
+import os
 import time
 import traceback
-import aiohttp
 from datetime import datetime, timedelta
-import os
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+import aiohttp
 from munch import Munch
 
 from .login import Login
 from .ws import Ws
 from .messages import Messages
+from .opcodes import MessageOpcode
+from .logging_config import logger
 
 
 class Vanus:
+    """Main client for OK.ru bot.
 
-    def __init__(self, auth_code):
+    Usage:
+        bot = Vanus("AUTHCODE")
+        await bot.run()
+        await bot.polling()
+    """
+
+    def __init__(self, auth_code: str):
         self.login = Login()
         self._session = aiohttp.ClientSession()
-        self._ws_task = None
+        self._ws_task: Optional[asyncio.Task] = None
         self._cache_path = str(Path.home() / ".pyokbot_cache.json")
         self.users_info_cache: dict = self.get_cache_and_update(self._cache_path)
-        self._handled_msg_ids = set()
+        self._handled_msg_ids: set = set()
         self.login.start_login(auth_code)
         self.ws = Ws(self.login)
 
-
     # === LIFECYCLE ===
 
-    async def run(self):
+    async def run(self) -> None:
+        """Connect to OK.ru and wait for authorization."""
         self._ws_task = asyncio.create_task(
             self.ws.start(self.login.AUTHCODE, self.login.okweb_token)
         )
-
         await self.ws.authorized_event.wait()
-
         self.bot_info = await self.ws.get_bot_info()
         self.bot_info = self.bot_info.get("profile")
         self.messages = Messages(self.bot_info, self._session)
 
-
-    async def stop(self):
+    async def stop(self) -> None:
+        """Disconnect and clean up."""
         if self.ws and getattr(self.ws, '_conn', None):
             await self.ws._conn.close()
         if self._ws_task:
@@ -48,120 +59,166 @@ class Vanus:
         if self._session and not self._session.closed:
             await self._session.close()
 
-
-    async def __aenter__(self):
+    async def __aenter__(self) -> Vanus:
         await self.run()
         return self
 
-
-    async def __aexit__(self, *args):
+    async def __aexit__(self, *args) -> None:
         await self.stop()
 
+    async def polling(self) -> None:
+        """Start processing messages from the WebSocket queue.
 
-    async def polling(self):
+        Handlers are checked in registration order and the first match wins.
+        """
 
-        async def safe_call(func, msg):
+        async def safe_call(func: Callable, msg: Munch) -> None:
             try:
                 await func(msg)
-            except Exception as e:
-                print(f"[HANDLER ERROR] {traceback.format_exc()}")
+            except Exception:
+                logger.error(f"[HANDLER ERROR] {traceback.format_exc()}")
 
         try:
             while True:
                 msg = await self.ws._msg_queue.get()
-
-                if not msg or msg.get("opcode") != 128:
+                if not msg or msg.get("opcode") != MessageOpcode.INCOMING_MESSAGE:
                     continue
                 try:
                     original_message = self.messages.generate_message_object(msg)
                 except Exception:
                     continue
-
                 if original_message is None:
                     continue
-
                 msg_id = original_message.get("id")
                 if msg_id and msg_id in self._handled_msg_ids:
                     continue
                 if msg_id:
                     self._handled_msg_ids.add(msg_id)
-
                 if not self.ws.handles_list:
                     continue
-
                 for handler in self.ws.handles_list:
                     func = handler.get("func")
                     _filter = handler.get("filters")
-
                     try:
                         filtered_message = self.message_filter(_filter, original_message)
                     except Exception:
                         continue
-
                     if filtered_message is None:
                         continue
-
                     asyncio.create_task(safe_call(func, filtered_message))
                     break
-
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print("[POLLING ERROR]", e)
+            logger.error(f"[POLLING ERROR] {e}")
         finally:
             await self.stop()
 
-
     # === SEND MESSAGE ===
 
-    async def writing_emulation(self, chat_id: str):
+    async def writing_emulation(self, chat_id: str) -> None:
+        """Show 'typing...' indicator in a chat."""
         await self.messages.writing_emulation(self.ws, chat_id)
 
+    async def send_message(
+        self,
+        chat_id: str,
+        message_text: str,
+        parse_mode: Optional[str] = None,
+    ) -> None:
+        """Send a text message to a chat.
 
-    async def send_message(self, chat_id: str, message_text: str, parse_mode: str = None):
+        Args:
+            chat_id: target chat ID.
+            message_text: message body.
+            parse_mode: set to "html" to enable HTML formatting.
+        """
         await self.messages.send_message(self.ws, chat_id, message_text, parse_mode)
 
+    async def send_reply(
+        self,
+        message: dict,
+        message_text: str,
+        parse_mode: Optional[str] = None,
+        reply_to_repl: bool = False,
+    ) -> None:
+        """Reply to a message.
 
-    async def send_reply(self, message: dict, message_text: str, parse_mode: str = None, reply_to_repl: bool = False):
+        Args:
+            message: the message object to reply to.
+            message_text: reply body.
+            parse_mode: set to "html" for HTML formatting.
+            reply_to_repl: if True, reply to the original replied-to message instead.
+        """
         await self.messages.send_reply(self.ws, message, message_text, parse_mode, reply_to_repl)
 
-
-    async def send_voice(self, chat_id: int, voice_file_path: str, repl_to_message: str = None):
+    async def send_voice(
+        self,
+        chat_id: str,
+        voice_file_path: str,
+        repl_to_message: Optional[str] = None,
+    ) -> None:
+        """Send a voice message."""
         await self.messages.send_voice(self.ws, chat_id, voice_file_path, repl_to_message)
 
+    async def send_photo(
+        self,
+        chat_id: str,
+        photo_file_path: str,
+        caption: Optional[str] = None,
+        repl_to_message: Optional[str] = None,
+        parse_mode: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Send a photo.
 
-    async def send_photo(self, chat_id: int, photo_file_path: str, caption: str = None, repl_to_message: str = None, parse_mode: str = None):
-        return await self.messages.send_photo(self.ws, chat_id, photo_file_path, caption, repl_to_message, parse_mode)
+        Args:
+            photo_file_path: URL or local file path.
+            caption: optional caption text.
+            repl_to_message: message ID to reply to.
+            parse_mode: set to "html" for HTML in caption.
+        """
+        return await self.messages.send_photo(
+            self.ws, chat_id, photo_file_path, caption, repl_to_message, parse_mode
+        )
 
+    async def send_video(
+        self,
+        chat_id: str,
+        video_file_path: str,
+        caption: Optional[str] = None,
+        repl_to_message: Optional[str] = None,
+        parse_mode: Optional[str] = None,
+    ) -> None:
+        """Send a video file."""
+        await self.messages.send_video(
+            self.ws, chat_id, video_file_path, caption, repl_to_message, parse_mode
+        )
 
-    async def send_video(self, chat_id: int, video_file_path: str, caption: str = None, repl_to_message: str = None, parse_mode: str = None):
-        await self.messages.send_video(self.ws, chat_id, video_file_path, caption, repl_to_message, parse_mode)
-
-
-    async def send_file(self, chat_id: int, file_path: str, title: str = None, repl_to_message: str = None):
+    async def send_file(
+        self,
+        chat_id: str,
+        file_path: str,
+        title: Optional[str] = None,
+        repl_to_message: Optional[str] = None,
+    ) -> None:
+        """Send a file."""
         await self.messages.send_file(self.ws, chat_id, file_path, title, repl_to_message)
-
 
     # === CHAT MANAGEMENT ===
 
-    async def get_chat_info(self, chat_id: str):
+    async def get_chat_info(self, chat_id: str) -> dict:
+        """Fetch chat metadata (title, members, messages, pinned message)."""
         await self.ws._conn.send(json.dumps({
-            "ver": 10,
-            "cmd": 0,
-            "seq": 24,
-            "opcode": 48,
+            "ver": 10, "cmd": 0, "seq": 24,
+            "opcode": MessageOpcode.CHAT_INFO,
             "payload": {"chatIds": [chat_id]}
         }))
-
-        response = await self.ws.wait_for_message(48)
+        response = await self.ws.wait_for_message(MessageOpcode.CHAT_INFO)
         response = response.get("payload").get("chats")[0]
         participants = response.get("participants") or {}
-        participants_list = list(participants.keys())
-
         last_msg = response.get("lastMessage") or {}
-        attaches_last_message = self.parse_attaches_to_obj(last_msg.get("attaches"))
-
-        result = {
+        attaches = self.parse_attaches_to_obj(last_msg.get("attaches"))
+        result: dict = {
             "chat_id": chat_id,
             "title": response.get("title"),
             "status": response.get("status"),
@@ -174,259 +231,260 @@ class Vanus:
             },
             "members": {
                 "count": response.get("participantsCount"),
-                "list": participants_list,
+                "list": list(participants.keys()),
             },
             "messages": {
                 "last": {
-                    **attaches_last_message,
+                    **attaches,
                     "id": last_msg.get("id"),
                     "text": last_msg.get("text"),
-                    "sender_id": last_msg.get("sender")
+                    "sender_id": last_msg.get("sender"),
                 },
-                "count": response.get("messagesCount")
-            }
+                "count": response.get("messagesCount"),
+            },
         }
-
-        if response.get("pinnedMessage") is not None:
+        pinned = response.get("pinnedMessage")
+        if pinned is not None:
             result["pinned"] = {
-                "id": response.get("pinnedMessage").get("id"),
-                "text": response.get("pinnedMessage").get("text"),
-                "sender_id": response.get("pinnedMessage").get("sender")
+                "id": pinned.get("id"),
+                "text": pinned.get("text"),
+                "sender_id": pinned.get("sender"),
             }
-
         return result
 
-
-    async def change_chat_photo(self, chat_id: int, photo_file_path: str):
+    async def change_chat_photo(self, chat_id: str, photo_file_path: str) -> None:
+        """Change the chat avatar."""
         await self.messages.change_chat_photo(self.ws, chat_id, photo_file_path)
 
-
-    async def change_chat_title(self, chat_id, title: str):
+    async def change_chat_title(self, chat_id: str, title: str) -> None:
+        """Rename a chat."""
         await self.messages.change_chat_title(self.ws, chat_id, title)
 
-
-    async def delete_member(self, chat_id, member_ids: list = None, member_id: str = None):
+    async def delete_member(
+        self,
+        chat_id: str,
+        member_ids: Optional[list] = None,
+        member_id: Optional[str] = None,
+    ) -> None:
+        """Remove a member from a chat."""
         await self.messages.delete_member(self.ws, chat_id, member_ids, member_id)
 
-
-    async def delete_message(self, chat_id, message_ids: list = None, message_id: str = None):
+    async def delete_message(
+        self,
+        chat_id: str,
+        message_ids: Optional[list] = None,
+        message_id: Optional[str] = None,
+    ) -> None:
+        """Delete a message."""
         await self.messages.delete_message(self.ws, chat_id, message_ids, message_id)
 
+    async def clear_chat_history(self, chat_id: str, for_all: Optional[bool] = None) -> None:
+        """Clear chat history.
 
-    async def clear_chat_history(self, chat_id, for_all: bool = None):
+        Args:
+            for_all: if True, clears for everyone; if False, only for the bot.
+        """
         await self.messages.clear_chat_history(self.ws, chat_id, for_all)
 
-
-    async def edit_message_text(self, chat_id, message_id: str, message_text: str, parse_mode: str = None):
+    async def edit_message_text(
+        self,
+        chat_id: str,
+        message_id: str,
+        message_text: str,
+        parse_mode: Optional[str] = None,
+    ) -> None:
+        """Edit a sent message."""
         await self.messages.edit_message_text(self.ws, chat_id, message_id, message_text, parse_mode)
 
-
-    async def pin_chat_message(self, chat_id, message_id: str):
+    async def pin_chat_message(self, chat_id: str, message_id: str) -> None:
+        """Pin a message in a chat."""
         await self.messages.pin_chat_message(self.ws, chat_id, message_id)
 
-
     async def tst_user(self, user_id: str) -> dict:
+        """Check if a user is currently logged in."""
         return await self.login.tst_user(user_id)
-
 
     # === USER INFO ===
 
-    async def get_user_info(self, user_id: str):
-
-        if str(user_id) not in self.users_info_cache:
+    async def get_user_info(self, user_id: str) -> dict:
+        """Get user profile info. Results are cached for 1 hour."""
+        uid = str(user_id)
+        if uid not in self.users_info_cache:
             response = await self.login.get_user_info(user_id)
-            self.users_info_cache[str(user_id)] = response
+            self.users_info_cache[uid] = response
             self.get_cache_and_update(self._cache_path, "UPDATE")
             return response
-        else:
-            user_info_data = self.users_info_cache.get(str(user_id))
-            if user_info_data.get("last_update_time") is not None:
-                current_time = datetime.now()
-                time_obj = datetime.strptime(user_info_data.get("last_update_time"), "%Y-%m-%d %H:%M:%S.%f")
-                time_diff = current_time - time_obj
-                if time_diff >= timedelta(seconds=3600):
-                    response = await self.login.get_user_info(user_id)
-                    self.users_info_cache[str(user_id)] = response
-                    self.get_cache_and_update(self._cache_path, "UPDATE")
-                    return response
-                else:
-                    return user_info_data
+        cached = self.users_info_cache[uid]
+        last_update = cached.get("last_update_time")
+        if last_update:
+            now = datetime.now()
+            last = datetime.strptime(last_update, "%Y-%m-%d %H:%M:%S.%f")
+            if now - last >= timedelta(seconds=3600):
+                response = await self.login.get_user_info(user_id)
+                self.users_info_cache[uid] = response
+                self.get_cache_and_update(self._cache_path, "UPDATE")
+                return response
+            return cached
+        return cached
 
-
-    async def socket_reconect_count(self):
+    async def socket_reconect_count(self) -> int:
+        """Return the number of WebSocket reconnections."""
         return self.ws.socket_reconect_counter
-
 
     # === CACHE ===
 
-    def get_cache_and_update(self, cache_path: str, method: str = "GET"):
-
+    def get_cache_and_update(self, cache_path: str, method: str = "GET") -> dict:
+        """Read or write the user info cache file."""
         if method == "GET":
             try:
                 if os.path.exists(cache_path):
-                    with open(cache_path, "r", encoding="utf-8") as cache:
-                        cache_data = json.load(cache)
-                        return cache_data if cache_data is not None else dict()
-                else:
-                    return dict()
+                    with open(cache_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        return data if data is not None else {}
+                return {}
             except Exception:
-                return dict()
-
+                return {}
         if method == "UPDATE":
             try:
-                with open(cache_path, "w", encoding="utf-8") as cache:
-                    json.dump(self.users_info_cache, cache, ensure_ascii=False, indent=4)
-                    return True
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(self.users_info_cache, f, ensure_ascii=False, indent=4)
             except Exception:
                 pass
-        return False
-
+        return {}
 
     # === FILTERS & HANDLERS ===
 
     @staticmethod
-    def parse_attaches_to_obj(attaches: dict):
+    def parse_attaches_to_obj(attaches: Optional[dict]) -> dict:
+        """Convert raw attachment data into structured dicts."""
         photo: list = []
         video: list = []
-        audio: dict = None
-        document: dict = None
-
+        audio: Optional[dict] = None
+        document: Optional[dict] = None
         if not attaches:
             return {}
-
         for attach in attaches:
-            if attach.get("_type") == "PHOTO":
+            t = attach.get("_type")
+            if t == "PHOTO":
                 photo.append({
                     "token": attach.get("photoToken"),
                     "url": attach.get("url"),
                     "height": attach.get("height"),
-                    "width": attach.get("width")
+                    "width": attach.get("width"),
                 })
-            elif attach.get("_type") == "VIDEO":
+            elif t == "VIDEO":
                 video.append({
                     "token": attach.get("token"),
                     "url": attach.get("thumbnail"),
                     "height": attach.get("height"),
                     "width": attach.get("width"),
-                    "duration": attach.get("duration")
+                    "duration": attach.get("duration"),
                 })
-            elif attach.get("_type") == "FILE":
-                preview = {}
-                if attach.get("preview").get("_type") == "PHOTO":
-                    preview = {
-                        "url": attach.get("preview").get("url"),
-                        "height": attach.get("preview").get("height"),
-                        "width": attach.get("preview").get("width")
+            elif t == "FILE":
+                preview = attach.get("preview", {})
+                ptype = preview.get("_type")
+                preview_data = {}
+                if ptype == "PHOTO":
+                    preview_data = {
+                        "url": preview.get("url"),
+                        "height": preview.get("height"),
+                        "width": preview.get("width"),
                     }
-                elif attach.get("preview").get("_type") == "VIDEO":
-                    preview = {
-                        "url": attach.get("preview").get("thumbnail"),
-                        "height": attach.get("preview").get("height"),
-                        "width": attach.get("preview").get("width"),
-                        "duration": attach.get("preview").get("duration")
+                elif ptype == "VIDEO":
+                    preview_data = {
+                        "url": preview.get("thumbnail"),
+                        "height": preview.get("height"),
+                        "width": preview.get("width"),
+                        "duration": preview.get("duration"),
                     }
-
                 document = {
-                    **preview,
+                    **preview_data,
                     "name": attach.get("name"),
-                    "type": attach.get("preview").get("_type").lower(),
-                    "size": attach.get("size")
+                    "type": ptype.lower() if ptype else None,
+                    "size": attach.get("size"),
                 }
-            elif attach.get("_type") == "AUDIO":
+            elif t == "AUDIO":
                 audio = {
                     "duration": attach.get("duration"),
                     "url": attach.get("url"),
-                    "token": attach.get("token")
+                    "token": attach.get("token"),
                 }
+        return {"photo": photo, "video": video, "document": document, "audio": audio}
 
-        return {
-            "photo": photo,
-            "video": video,
-            "document": document,
-            "audio": audio
-        }
+    def message_filter(self, filter: dict, message: dict) -> Optional[Munch]:
+        """Apply a handler filter to a message.
 
-
-    def message_filter(self, filter: dict, message: dict):
+        Returns a Munch if the message matches, None otherwise.
+        """
         message = dict(message)
-        filters = filter.get("filters")
+        f = filter.get("filters")
         text = filter.get("text")
         content_types = filter.get("content_types")
         commands = filter.get("commands")
-
-        message_attaches_obj = self.parse_attaches_to_obj(message.get("attaches"))
+        attaches = self.parse_attaches_to_obj(message.get("attaches"))
         if message.get("attaches"):
             message.pop("attaches")
-        message = {**message, **message_attaches_obj}
-
-        from_bot_filter = filters is None
-        text_filter = text is None
-        content_types_filter = content_types is None
-        commands_filter = commands is None
-
-        if not content_types_filter:
-            for content_type in content_types:
-                if content_type == "text":
-                    if message.get("text"):
-                        content_types_filter = True
-                        break
-                elif content_type == "commands":
-                    if message.get("text", "").startswith("/"):
-                        content_types_filter = True
-                        break
-                elif content_type == "video":
-                    if message_attaches_obj.get("video"):
-                        content_types_filter = True
-                        break
-                elif content_type == "photo":
-                    if message_attaches_obj.get("photo"):
-                        content_types_filter = True
-                        break
-                elif content_type == "audio":
-                    if message_attaches_obj.get("audio") is not None:
-                        content_types_filter = True
-                        break
-                elif content_type == "document":
-                    if message_attaches_obj.get("document") is not None:
-                        content_types_filter = True
-                        break
-
-        if not from_bot_filter:
-            if message.get("type") == str(filters):
-                from_bot_filter = True
-
-        if not text_filter:
-            if text == message.get("text"):
-                text_filter = True
-            elif isinstance(text, list):
-                for one_text in text:
-                    if one_text == message.get("text"):
-                        text_filter = True
-                        break
-
-        if not commands_filter:
+        message = {**message, **attaches}
+        from_bot_ok = f is None
+        text_ok = text is None
+        content_ok = content_types is None
+        cmd_ok = commands is None
+        if not content_ok:
+            for ct in content_types:
+                if ct == "text" and message.get("text"):
+                    content_ok = True; break
+                if ct == "commands" and message.get("text", "").startswith("/"):
+                    content_ok = True; break
+                if ct == "video" and attaches.get("video"):
+                    content_ok = True; break
+                if ct == "photo" and attaches.get("photo"):
+                    content_ok = True; break
+                if ct == "audio" and attaches.get("audio") is not None:
+                    content_ok = True; break
+                if ct == "document" and attaches.get("document") is not None:
+                    content_ok = True; break
+        if not from_bot_ok:
+            if message.get("type") == str(f):
+                from_bot_ok = True
+        if not text_ok:
+            msg_text = message.get("text")
+            if isinstance(text, list):
+                text_ok = msg_text in text
+            else:
+                text_ok = msg_text == text
+        if not cmd_ok:
             msg_text = message.get("text")
             if msg_text:
-                for command in commands:
-                    command = "/" + command
-                    if command == msg_text.split(" ")[0]:
-                        commands_filter = True
+                for cmd in commands:
+                    if "/" + cmd == msg_text.split(" ")[0]:
+                        cmd_ok = True
                         break
-
-        if from_bot_filter and text_filter and content_types_filter and commands_filter:
+        if from_bot_ok and text_ok and content_ok and cmd_ok:
             return Munch.fromDict(message)
 
+    def on_message(
+        self,
+        filters: str = "user",
+        text: Optional[str | list] = None,
+        content_types: Optional[list] = None,
+        commands: Optional[list] = None,
+    ) -> Callable:
+        """Decorator to register a message handler.
 
-    def on_message(self, filters: str = "user", text=None, content_types: list = None, commands=None):
-
-        def decorator(func):
+        Args:
+            filters: "user" or "bot". None means both.
+            text: exact text to match, or list of strings.
+            content_types: list of content types ("photo", "video", "audio", "document", "text", "commands").
+            commands: list of command names. "start" matches /start.
+        """
+        def decorator(func: Callable) -> Callable:
             self.ws.handles_list.append({
                 "func": func,
                 "filters": {
                     "filters": filters,
                     "text": text,
                     "content_types": content_types,
-                    "commands": commands
+                    "commands": commands,
                 }
             })
             return func

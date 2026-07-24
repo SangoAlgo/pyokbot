@@ -1,5 +1,5 @@
 site_name: pyokbot
-site_description: Python library for creating bots in Odnoklassniki (ok.ru) messenger via WebSocket
+site_description: Python library for Odnoklassniki (ok.ru) bots — WebSocket, async, no polling
 site_url: https://SangoAlgo.github.io/pyokbot
 repo_url: https://github.com/SangoAlgo/pyokbot
 repo_name: SangoAlgo/pyokbot

@@ -76,17 +76,17 @@ async def handle_audio(message):
 
 ## How handlers work
 
-Handlers are checked **in registration order**. The **first matching handler** wins — subsequent handlers are skipped. This is the same model used by aiogram and python-telegram-bot.
+Handlers are checked in the order you register them. The first one that matches wins — the rest are skipped.
 
 ```python
 @bot.on_message(commands=["start"])    # checked first
 @bot.on_message(commands=["help"])     # checked second
-@bot.on_message(filters="user")        # checked last (catch-all)
+@bot.on_message(filters="user")        # catch-all, checked last
 ```
 
-## Message object
+## The message object
 
-When a handler fires, it receives a `Munch` object with attribute-style access:
+Handlers receive a `Munch` object. You can access fields as attributes:
 
 ```python
 async def handler(message):
@@ -94,8 +94,10 @@ async def handler(message):
     message.chat.id       # "12345"
     message.user.id       # "67890"
     message.id            # "msg_001"
-    message.photo         # [{"token": "...", "url": "...", ...}] — if photo
-    message.video         # [{"token": "...", ...}] — if video
-    message.audio         # {"token": "...", ...} — if audio
-    message.document      # {"name": "...", ...} — if file
+    message.photo         # list of photo dicts — if the message has photos
+    message.video         # list of video dicts — if it has videos
+    message.audio         # audio dict — if it has audio
+    message.document      # file dict — if it has a file
+    message.is_reply      # True/False
+    message.reply         # the replied-to message, if any
 ```

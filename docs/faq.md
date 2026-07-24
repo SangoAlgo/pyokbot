@@ -1,37 +1,37 @@
 # FAQ
 
-## What is an AUTHCODE and how do I get it?
+## What is an AUTHCODE and how do I get one?
 
-An `AUTHCODE` is a cookie from ok.ru that authenticates your bot. See the [Installation guide](installation.md#obtaining-an-authcode) for details.
+It's a cookie from ok.ru that authenticates your bot. See the [installation guide](installation.md) for step-by-step instructions.
 
 ## Can I run multiple bots?
 
-Yes. Each `Vanus` instance maintains its own WebSocket connection. Create separate instances with different auth codes.
+Yes. Each `Vanus` instance creates its own WebSocket connection. Different auth codes, different bots.
 
 ## Does the bot need to be online 24/7?
 
-Your bot only responds while the Python process is running. For 24/7 operation, deploy it to a VPS or cloud server.
+It only responds while the Python process is running. For 24/7 use, deploy it to a VPS or a cloud server.
 
-## What happens on disconnect?
+## What happens when the connection drops?
 
-pyokbot automatically reconnects with exponential backoff (5s, 10s, 20s, etc.). The bot resumes normal operation once the connection is restored.
+pyokbot reconnects automatically with exponential backoff (5s, 10s, 20s, up to 60s). It picks up where it left off.
 
 ## Is there a rate limit?
 
-OK.ru's server-side rate limits are undocumented. In practice, sending a few messages per second works reliably.
+OK.ru doesn't document rate limits. In practice, sending a few messages per second works fine.
 
 ## Can I send messages to any user?
 
-Your bot can send messages to any chat it is a member of. It cannot initiate private conversations with users who haven't interacted with it.
+The bot can only send to chats it's a member of. It can't start a conversation with someone who hasn't written to it first.
 
-## How do I get the message ID for pinning?
+## How do I get a message ID for pinning?
 
-Message IDs are available on the `message.id` attribute in handlers.
+Message IDs are available on `message.id` inside handlers.
 
 ## What HTML tags are supported?
 
-`<b>`, `<i>`, `<u>`, `<s>`, `<code>`, `<pre>`, `<h1>`, `<a href="...">`. Use `parse_mode="html"` when sending.
+`<b>`, `<i>`, `<u>`, `<s>`, `<code>`, `<pre>`, `<h1>`, `<a href="...">`. Pass `parse_mode="html"` when sending.
 
 ## Is this an official library?
 
-No. pyokbot is an independent implementation based on reverse-engineering the OK.ru WebSocket protocol. It is not affiliated with or endorsed by Odnoklassniki.
+No. pyokbot is an independent project based on reverse-engineering OK.ru's WebSocket protocol. Not affiliated with Odnoklassniki.

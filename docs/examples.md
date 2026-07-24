@@ -1,58 +1,56 @@
 # Examples
 
-All examples are in the [`examples/`](https://github.com/SangoAlgo/pyokbot/tree/main/examples) directory.
+All examples live in the [`examples/`](https://github.com/SangoAlgo/pyokbot/tree/main/examples) directory.
 
 ## echobot.py
 
-A classic echo bot with command handling:
+A classic echo bot.
 
 ```bash
 python examples/echobot.py AUTHCODE
 ```
 
 - `/start` — welcome message
-- `/help` — command list
-- `/info` — your user info (name, ID, status)
-- `/ping` → `pong!`
-- `/stop` — shuts down the bot
+- `/help` — list of commands
+- `/info` — your name, ID, status
+- `/ping` — bot replies `pong!`
+- `/stop` — shuts the bot down
 - Sends photos, videos, audio back with captions
 - Echoes any text message
 
 ## media_bot.py
 
-Demonstrates sending different media types:
+Sending different types of media.
 
 ```bash
 python examples/media_bot.py AUTHCODE
 ```
 
-- `/photo` — sends a sample photo from URL
-- `/video` — sends a sample video
-- `/file` — sends a PDF document
-- `/voice` — sends a voice message
+- `/photo` — send a photo from URL
+- `/video` — send a video file
+- `/file` — send a PDF document
+- `/voice` — send a voice message
 
 ## filter_demo_bot.py
 
-Showcases every filter type in the library:
+Every filter type in one bot.
 
 ```bash
 python examples/filter_demo_bot.py AUTHCODE
 ```
 
-| Filter | Triggers on |
-|--------|-------------|
-| `commands=["start"]` | `/start` |
-| `text="hello"` | Exact match "hello" |
-| `text=["hi", "hey"]` | Any of the listed texts |
-| `content_types=["photo"]` | Photo messages |
-| `content_types=["video"]` | Video messages |
-| `content_types=["audio"]` | Audio messages |
-| `content_types=["document"]` | File messages |
-| `filters="user"` (no other filters) | Catch-all fallback |
+- `commands=["start"]` — `/start`
+- `text="hello"` — exact match
+- `text=["hi", "hey"]` — any of the listed
+- `content_types=["photo"]` — photo messages
+- `content_types=["video"]` — video messages
+- `content_types=["audio"]` — voice messages
+- `content_types=["document"]` — file messages
+- `filters="user"` — catch-all fallback
 
 ## html_demo_bot.py
 
-Shows all supported HTML formatting tags:
+All supported HTML tags.
 
 ```bash
 python examples/html_demo_bot.py AUTHCODE
@@ -66,15 +64,15 @@ python examples/html_demo_bot.py AUTHCODE
 
 ## chat_admin_bot.py
 
-Chat management commands (requires admin rights in the chat):
+Chat management commands (you need admin rights in the chat).
 
 ```bash
 python examples/chat_admin_bot.py AUTHCODE
 ```
 
-- `/pin <message_id>` — pins a message
-- `/edit <message_id> <new_text>` — edits a message
-- `/clear` — clears chat history for all
-- `/clear_me` — clears chat history for yourself
-- `/title <new_name>` — renames the chat
-- `/info` — shows chat info (name, members, message count)
+- `/pin <message_id>` — pin a message
+- `/edit <id> <new text>` — edit a message
+- `/clear` — clear history for everyone
+- `/clear_me` — clear history for yourself
+- `/title <new name>` — rename the chat
+- `/info` — chat info (name, members, message count)
