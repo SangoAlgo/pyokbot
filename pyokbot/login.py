@@ -1,37 +1,71 @@
-import time
+"""
+User authentication and token management for OK.ru API.
+
+Handles login flow, token extraction, and user profile fetching.
+"""
+
+import logging
 from datetime import datetime
-import requests
+from typing import Any, Dict, Optional
+
 import aiohttp
+import requests
+from selectolax.lexbor import LexborHTMLParser
+
+from .logging_config import logger
 
 
 class Login:
+    """
+    Manages authentication with OK.ru API.
 
-    def __init__(self):
-        self.BASE_URL = "https://ok.ru"
-        self.WS_URL = "wss://api-messages-ws.ok.ru/websocket?okweb=true&autoinit=true&version=1.10.16"
-        self.PING_INTERVAL = 30
-        self.RECONNECT_DELAY = 10
+    Handles AUTHCODE validation, token extraction, and user profile fetching via HTML parsing.
 
-        self.UA = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        )
+    Attributes:
+        BASE_URL: OK.ru base URL.
+        WS_URL: WebSocket endpoint URL.
+        UA: User-Agent string for HTTP requests.
+        WS_USER_AGENT: User-Agent data for WebSocket protocol.
+    """
 
-        self.WS_USER_AGENT = {
-            "deviceType": "OKWEB",
-            "appVersion": "1.10.16",
-            "osVersion": "Windows",
-            "locale": "ru",
-            "deviceName": "Chrome",
-            "screen": "1024x768 2.0x",
-            "headerUserAgent": self.UA,
-        }
+    BASE_URL: str = "https://ok.ru"
+    WS_URL: str = "wss://api-messages-ws.ok.ru/websocket?okweb=true&autoinit=true&version=1.10.16"
+    PING_INTERVAL: int = 30
+    RECONNECT_DELAY: int = 10
 
+    UA: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    )
 
-    # === SESSION ===
+    WS_USER_AGENT: Dict[str, Any] = {
+        "deviceType": "OKWEB",
+        "appVersion": "1.10.16",
+        "osVersion": "Windows",
+        "locale": "ru",
+        "deviceName": "Chrome",
+        "screen": "1024x768 2.0x",
+        "headerUserAgent": UA,
+    }
+
+    def __init__(self) -> None:
+        """Initialize Login handler."""
+        self.session: Optional[requests.Session] = None
+        self.AUTHCODE: Optional[str] = None
+        self.tkn: Optional[str] = None
+        self.okweb_token: Optional[str] = None
 
     def build_session(self, authcode: str) -> requests.Session:
+        """
+        Create an authenticated HTTP session.
+
+        Args:
+            authcode: The AUTHCODE cookie value from OK.ru.
+
+        Returns:
+            Configured requests.Session with headers and cookies.
+        """
         s = requests.Session()
         s.headers.update({
             "User-Agent": self.UA,
@@ -42,10 +76,16 @@ class Login:
         s.cookies.set("AUTHCODE", authcode, domain=".ok.ru")
         return s
 
-
-    # === TOKENS ===
-
     def get_tkn(self, session: requests.Session) -> str:
+        """
+        Extract the internal TKN token from OK.ru.
+
+        Args:
+            session: Authenticated requests.Session.
+
+        Returns:
+            TKN token string, or empty string if extraction failed.
+        """
         try:
             r = session.post(
                 f"{self.BASE_URL}/web-api/upms",
@@ -59,13 +99,25 @@ class Login:
             )
             tkn = r.headers.get("tkn", "")
             if tkn:
+                logger.debug("TKN token extracted successfully")
                 return tkn
-        except Exception:
-            pass
+            else:
+                logger.warning("TKN token not found in response headers")
+        except requests.RequestException as e:
+            logger.error(f"Failed to get TKN token: {e}")
         return ""
 
-
     def get_okweb_token(self, session: requests.Session, tkn: str) -> str:
+        """
+        Extract the OKWEB authentication token.
+
+        Args:
+            session: Authenticated requests.Session.
+            tkn: The TKN token from get_tkn().
+
+        Returns:
+            OKWEB token string, or empty string if extraction failed.
+        """
         try:
             r = session.post(
                 f"{self.BASE_URL}/web-api/v2/messages/credentials",
@@ -85,13 +137,26 @@ class Login:
             data = r.json()
             token = (data.get("result") or {}).get("token") or data.get("token", "")
             if token:
+                logger.debug("OKWEB token extracted successfully")
                 return token
-        except Exception:
-            pass
+            else:
+                logger.warning("OKWEB token not found in response")
+        except (requests.RequestException, ValueError) as e:
+            logger.error(f"Failed to get OKWEB token: {e}")
         return ""
 
+    def start_login(self, authcode: str) -> None:
+        """
+        Initialize authentication process.
 
-    def start_login(self, authcode: str):
+        Validates AUTHCODE and extracts necessary tokens.
+
+        Args:
+            authcode: The AUTHCODE cookie value from OK.ru.
+
+        Raises:
+            ValueError: If AUTHCODE is invalid or tokens cannot be extracted.
+        """
         self.AUTHCODE = authcode
 
         self.session = self.build_session(self.AUTHCODE)
@@ -99,37 +164,97 @@ class Login:
         self.okweb_token = self.get_okweb_token(self.session, self.tkn)
 
         if not self.tkn:
-            raise ValueError("TKN not received — check AUTHCODE validity")
+            raise ValueError(
+                "TKN not received — check AUTHCODE validity. "
+                "Make sure you're using a valid AUTHCODE cookie from ok.ru"
+            )
         if not self.okweb_token:
-            raise ValueError("OKWEB token not received — check AUTHCODE validity")
+            raise ValueError(
+                "OKWEB token not received — check AUTHCODE validity. "
+                "The authentication tokens may have expired."
+            )
 
+        logger.info("Login initialization successful")
 
-    # === USER INFO ===
+    async def get_user_info(self, user_id: str) -> Dict[str, Any]:
+        """
+        Fetch user profile information.
 
-    async def get_user_info(self, user_id: str) -> dict:
-        from selectolax.lexbor import LexborHTMLParser
+        Retrieves user data by scraping their profile page.
 
-        async with aiohttp.ClientSession(headers=self.session.headers) as session:
-            start_time = time.time()
+        Args:
+            user_id: The OK.ru user ID.
 
-            async with session.get(f"https://ok.ru/profile/{user_id}") as response:
-                html = await response.text()
+        Returns:
+            Dictionary containing user info:
+            - id: User ID
+            - name: User full name
+            - avatar_url: URL to user's avatar
+            - last_visit: Last visit status
+            - last_update_time: When this data was fetched
 
-                tree = LexborHTMLParser(html)
+        Raises:
+            ValueError: If user profile cannot be parsed.
+        """
+        try:
+            async with aiohttp.ClientSession(
+                headers=self.session.headers if self.session else {}
+            ) as session:
+                start_time = datetime.now()
 
-                user_name = tree.css_first("title").text(strip=True).split(" | ")[0].strip()
-                user_avatar = tree.css_first('img[alt*="Фотография"]').attributes.get("src", "")
-                if user_avatar is None:
-                    user_avatar = "https://m.ok.ru/mres/img/stb3/male_370.png"
+                async with session.get(f"https://ok.ru/profile/{user_id}") as response:
+                    if response.status != 200:
+                        logger.error(f"Failed to fetch user {user_id}: HTTP {response.status}")
+                        raise ValueError(f"HTTP {response.status}")
 
-                last_visit = tree.css_first("div.anonym_user_head_last-visit-mark").text(strip=True)
-                if last_visit is None:
-                    last_visit = "Сейчас на сайте"
+                    html = await response.text()
 
-                return {
-                    "id": user_id,
-                    "name": user_name,
-                    "avatar_url": user_avatar,
-                    "last_visit": last_visit,
-                    "last_update_time": str(datetime.now()),
-                }
+                    tree = LexborHTMLParser(html)
+
+                    # Extract user name
+                    title_elem = tree.css_first("title")
+                    if not title_elem:
+                        raise ValueError("Could not parse user name from page")
+                    user_name = title_elem.text(strip=True).split(" | ")[0].strip()
+
+                    # Extract avatar
+                    avatar_elem = tree.css_first('img[alt*="Фотография"]')
+                    user_avatar = (
+                        avatar_elem.attributes.get("src", "")
+                        if avatar_elem
+                        else "https://m.ok.ru/mres/img/stb3/male_370.png"
+                    )
+
+                    # Extract last visit
+                    visit_elem = tree.css_first("div.anonym_user_head_last-visit-mark")
+                    last_visit = (
+                        visit_elem.text(strip=True)
+                        if visit_elem
+                        else "Сейчас на сайте"
+                    )
+
+                    logger.debug(f"User info fetched for {user_id}")
+
+                    return {
+                        "id": user_id,
+                        "name": user_name,
+                        "avatar_url": user_avatar,
+                        "last_visit": last_visit,
+                        "last_update_time": str(start_time),
+                    }
+        except Exception as e:
+            logger.error(f"Failed to get user info for {user_id}: {e}")
+            raise
+
+    async def tst_user(self, user_id: str) -> Dict[str, Any]:
+        """
+        Test user validity (reserved for future use).
+
+        Args:
+            user_id: The OK.ru user ID to test.
+
+        Returns:
+            Dictionary with test results.
+        """
+        # Placeholder for future implementation
+        return {"user_id": user_id, "valid": True}
