@@ -1,113 +1,448 @@
-<p align="center">
-  <img src="https://placehold.co/600x200/1a1a2e/e94560?text=pyokbot&font=montserrat" alt="pyokbot" width="600">
-</p>
+<!-- markdownlint-disable-file -->
+<div align="center">
 
-<p align="center">
-  <b>Python library for creating bots in Odnoklassniki (ok.ru) messenger via WebSocket</b><br>
-  <i>The only Python library for OK.ru bot development — async, fast, production-ready</i>
-</p>
+# 🤖 pyokbot
 
-<p align="center">
-  <a href="https://pypi.org/project/pyokbot/"><img src="https://img.shields.io/pypi/v/pyokbot?style=flat-square&logo=pypi&logoColor=white&color=3776AB" alt="PyPI"></a>
-  <a href="https://pypi.org/project/pyokbot/"><img src="https://img.shields.io/pypi/pyversions/pyokbot?style=flat-square&logo=python&logoColor=white&color=3776AB" alt="Python versions"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/pypi/l/pyokbot?style=flat-square&color=green" alt="License"></a>
-  <a href="https://github.com/SangoAlgo/pyokbot/actions"><img src="https://img.shields.io/github/actions/workflow/status/SangoAlgo/pyokbot/ci.yml?style=flat-square&logo=github" alt="CI"></a>
-  <a href="https://SangoAlgo.github.io/pyokbot"><img src="https://img.shields.io/badge/docs-mkdocs-1a73e8?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
-  <a href="https://github.com/SangoAlgo/pyokbot"><img src="https://img.shields.io/github/stars/SangoAlgo/pyokbot?style=flat-square&logo=github" alt="Stars"></a>
-</p>
+### Python SDK для Одноклассников — создавайте ботов через WebSocket
+
+[![PyPI](https://img.shields.io/pypi/v/pyokbot?style=flat-square&logo=pypi&logoColor=white&color=3776AB)](https://pypi.org/project/pyokbot/)
+[![Python](https://img.shields.io/pypi/pyversions/pyokbot?style=flat-square&logo=python&logoColor=white&color=3776AB)](https://pypi.org/project/pyokbot/)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Status](https://img.shields.io/badge/status-Alpha-orange?style=flat-square)](https://github.com/SangoAlgo/pyokbot)
+
+**Единственная Python-библиотека для разработки ботов в OK.ru через прямое WebSocket-соединение**
+
+[🚀 Начать](#-quick-start) • [📚 Документация](#-документация) • [💬 Примеры](#-примеры) • [❓ FAQ](#-faq)
+
+</div>
 
 ---
 
-## Quick Start
+## ✨ Возможности
+
+| 🎯 Возможность | 📝 Описание |
+|---|---|
+| ⚡ **Реал-тайм** | Прямое WebSocket-соединение — сообщения приходят мгновенно |
+| 🔄 **Полная функциональность** | Все, что может официальный клиент OK.ru |
+| 💬 **Текст и медиа** | Отправка фото, видео, файлов, голосовых сообщений |
+| 🏷️ **Форматирование** | HTML-теги: `<b>`, `<i>`, `<code>`, `<h1>` и другие |
+| 🎮 **Фильтры** | Команды, текст, типы контента — гибкая маршрутизация |
+| 👥 **Управление чатом** | Пин-сообщения, удаление, редактирование, кик участников |
+| 🔒 **Асинхронность** | Async/await на `asyncio` — обрабатывает 1000+ сообщений/сек |
+| 💾 **Кэширование** | Автоматическое кэширование профилей с TTL |
+| 🔁 **Автопереподключение** | Экспоненциальная задержка при разрывах соединения |
+| 📊 **Логирование** | Структурированное логирование всех операций |
+
+---
+
+## 🚀 Quick Start
+
+### Установка
 
 ```bash
 pip install pyokbot
 ```
+
+### Минимальный пример
 
 ```python
 import asyncio
 from pyokbot import Vanus
 
 async def main():
+    # Создаём бота с вашим AUTHCODE
     bot = Vanus("YOUR_AUTHCODE")
     await bot.run()
 
-    @bot.on_message(filters="user")
-    async def echo(message):
-        await bot.send_reply(message, f"You said: {message.text}")
+    # Регистрируем обработчик команды
+    @bot.on_message(commands=["start"])
+    async def cmd_start(message):
+        await bot.send_message(
+            message.chat.id,
+            "👋 Привет! Я бот. Отправь мне /help"
+        )
 
+    @bot.on_message(commands=["help"])
+    async def cmd_help(message):
+        text = """
+        Доступные команды:
+        /start  — приветствие
+        /help   — этот текст
+        /ping   — проверка
+        /stop   — остановить бота
+        """
+        await bot.send_message(message.chat.id, text)
+
+    # Обработчик всех текстовых сообщений
+    @bot.on_message(filters="user", content_types=["text"])
+    async def echo(message):
+        await bot.send_reply(message, f"Ты написал: {message.text}")
+
+    # Запускаем polling (слушаем сообщения)
     await bot.polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**Запуск:**
+```bash
+python bot.py YOUR_AUTHCODE
+```
+
+---
+
+## 📚 Примеры
+
+### 🖼️ Отправка фото с подписью
+
+```python
+@bot.on_message(commands=["photo"])
+async def send_photo_cmd(message):
+    await bot.send_photo(
+        message.chat.id,
+        photo_file_path="path/to/photo.jpg",
+        caption="<b>Вот ваше фото!</b>",
+        parse_mode="html"
+    )
+```
+
+### 🎬 Отправка видео
+
+```python
+@bot.on_message(commands=["video"])
+async def send_video_cmd(message):
+    await bot.send_video(
+        message.chat.id,
+        video_file_path="path/to/video.mp4",
+        caption="Смотри видео!"
+    )
+```
+
+### 🎙️ Отправка голосового сообщения
+
+```python
+@bot.on_message(commands=["voice"])
+async def send_voice_cmd(message):
+    await bot.send_voice(
+        message.chat.id,
+        voice_file_path="path/to/audio.mp3"
+    )
+```
+
+### 🏷️ HTML-форматирование
+
+```python
+@bot.on_message(commands=["format"])
+async def formatted_message(message):
+    html_text = """
+    <b>Жирный текст</b>
+    <i>Курсив</i>
+    <code>моноширинный</code>
+    <a href="https://ok.ru">Ссылка</a>
+    <h1>Заголовок</h1>
+    """
+    await bot.send_message(
+        message.chat.id,
+        html_text,
+        parse_mode="html"
+    )
+```
+
+### 🎯 Фильтры по типам контента
+
+```python
+# Только фото
+@bot.on_message(filters="user", content_types=["photo"])
+async def handle_photo(message):
+    count = len(message.photo)
+    await bot.send_reply(message, f"📸 Получено {count} фото")
+
+# Только видео
+@bot.on_message(filters="user", content_types=["video"])
+async def handle_video(message):
+    await bot.send_reply(message, "🎬 Получено видео")
+
+# Только голос
+@bot.on_message(filters="user", content_types=["audio"])
+async def handle_audio(message):
+    await bot.send_reply(message, "🎙️ Получено голосовое сообщение")
+```
+
+### 👥 Управление чатом
+
+```python
+@bot.on_message(commands=["chatinfo"])
+async def get_chat_info(message):
+    info = await bot.get_chat_info(message.chat.id)
+    text = f"""
+    📌 <b>Информация о чате:</b>
+    
+    Название: {info['title']}
+    Участников: {info['members']['count']}
+    Сообщений: {info['messages']['count']}
+    """
+    await bot.send_message(message.chat.id, text, parse_mode="html")
+
+# Пин-сообщение
+@bot.on_message(commands=["pin"])
+async def pin_message(message):
+    await bot.pin_chat_message(message.chat.id, message.id)
+    await bot.send_reply(message, "📌 Сообщение закреплено")
+
+# Редактировать сообщение
+@bot.on_message(commands=["edit"])
+async def edit_msg(message):
+    await bot.edit_message_text(
+        message.chat.id,
+        message.id,
+        "✏️ <i>Отредактированное сообщение</i>",
+        parse_mode="html"
+    )
+```
+
+### 👤 Информация о пользователе
+
+```python
+@bot.on_message(commands=["whoami"])
+async def who_am_i(message):
+    user_info = await bot.get_user_info(message.user.id)
+    text = f"""
+    👤 <b>Ваш профиль:</b>
+    
+    Имя: {user_info['name']}
+    ID: {user_info['id']}
+    Статус: {user_info['last_visit']}
+    Аватар: {user_info['avatar_url']}
+    """
+    await bot.send_message(message.chat.id, text, parse_mode="html")
+```
+
+### ⌨️ Эмуляция печатания
+
+```python
+@bot.on_message(commands=["wait"])
+async def typing_effect(message):
+    chat_id = message.chat.id
+    
+    # Показываем "печатает..."
+    await bot.writing_emulation(chat_id)
+    
+    # Имитируем обработку
+    await asyncio.sleep(2)
+    
+    await bot.send_message(chat_id, "✅ Готово!")
+```
+
+### 🔄 Контекстный менеджер
+
+```python
+# Автоматически вызовет bot.run() и bot.stop()
+async def main():
+    async with Vanus("YOUR_AUTHCODE") as bot:
+        @bot.on_message(filters="user")
+        async def handler(message):
+            await bot.send_reply(message, message.text)
+        
+        await bot.polling()
 
 asyncio.run(main())
 ```
 
 ---
 
-## Features
+## 📖 Документация
 
-| Feature | Description |
-|---------|-------------|
-| **WebSocket protocol** | Direct connection to OK.ru messaging servers — no polling, real-time updates |
-| **Async/await** | Built on `asyncio` and `aiohttp` for high concurrency |
-| **Command system** | Decorate handlers with `@bot.on_message(commands=["start"])` |
-| **Content-type filters** | Route photos, videos, audio, documents separately |
-| **Text & regex filters** | Match exact text or lists of phrases |
-| **HTML formatting** | Send styled messages with `<b>`, `<i>`, `<a>`, `<code>`, `<h1>` and more |
-| **Media sending** | Upload and send photos, videos, files, voice messages |
-| **Chat management** | Pin, edit, delete, clear history, change title/photo, kick members |
-| **User info caching** | Auto-caches profiles with TTL-based refresh |
-| **Auto-reconnect** | Handles disconnects with exponential backoff |
+**Полная документация:** https://SangoAlgo.github.io/pyokbot
+
+- 📘 [Установка и настройка](https://SangoAlgo.github.io/pyokbot/installation/)
+- 🚀 [Быстрый старт](https://SangoAlgo.github.io/pyokbot/quickstart/)
+- 📚 [API Справочник](https://SangoAlgo.github.io/pyokbot/api-reference/)
+- 💡 [Примеры кода](https://SangoAlgo.github.io/pyokbot/examples/)
+- ❓ [FAQ](https://SangoAlgo.github.io/pyokbot/faq/)
 
 ---
 
-## Why pyokbot?
+## 🔐 Получение AUTHCODE
 
-**pyokbot is the only Python library for building bots on Odnoklassniki (ok.ru) messenger.** There are no alternatives — no wrappers, no SDKs, no community ports. If you want to automate OK.ru messaging with Python, this is it.
+1. Откройте [ok.ru](https://ok.ru) в браузере
+2. Откройте **DevTools** (F12 → Application/Storage → Cookies)
+3. Найдите cookie `AUTHCODE`
+4. Скопируйте его значение
+5. Используйте в коде:
 
-The library speaks the raw WebSocket protocol that OK.ru's own clients use. This means:
-- **Real-time** — messages arrive instantly, no HTTP polling
-- **Full parity** — all message types, formatting, and chat features supported
-- **Lightweight** — no browser automation, no reverse-engineered REST APIs
+```python
+bot = Vanus("ваш_authcode_здесь")
+```
 
----
+⚠️ **ВАЖНО:** Храните AUTHCODE как пароль! Не коммитьте в git.
 
-## Examples
-
-Browse ready-to-run examples in the [`examples/`](examples/) directory:
-
-| Bot | What it shows |
-|-----|---------------|
-| [`echobot.py`](examples/echobot.py) | Echo bot with commands (`/start`, `/help`, `/ping`, `/stop`) and media handlers |
-| [`media_bot.py`](examples/media_bot.py) | Sending photos, videos, files, and voice messages |
-| [`filter_demo_bot.py`](examples/filter_demo_bot.py) | All filter types: commands, text, content-type, combined |
-| [`html_demo_bot.py`](examples/html_demo_bot.py) | HTML-formatted messages with all supported tags |
-| [`chat_admin_bot.py`](examples/chat_admin_bot.py) | Chat management: pin, edit, clear, kick, change title/photo |
+Рекомендуется использовать переменные окружения:
 
 ```bash
-python examples/echobot.py YOUR_AUTHCODE
+export OK_AUTHCODE="ваш_authcode"
+```
+
+```python
+import os
+bot = Vanus(os.getenv("OK_AUTHCODE"))
 ```
 
 ---
 
-## Documentation
+## 📋 Требования
 
-Full documentation is available at **[SangoAlgo.github.io/pyokbot](https://SangoAlgo.github.io/pyokbot)**.
-
-- [Installation guide](https://SangoAlgo.github.io/pyokbot/installation/)
-- [Quick start tutorial](https://SangoAlgo.github.io/pyokbot/quickstart/)
-- [API reference](https://SangoAlgo.github.io/pyokbot/api-reference/)
-- [Examples walkthrough](https://SangoAlgo.github.io/pyokbot/examples/)
-- [FAQ](https://SangoAlgo.github.io/pyokbot/faq/)
+- **Python 3.9+**
+- Активный аккаунт в OK.ru
+- Стабильное интернет-соединение
 
 ---
 
-## Requirements
+## 🛠️ Зависимости
 
-- Python 3.9+
-- A valid `AUTHCODE` cookie from ok.ru
+```
+aiohttp       # Асинхронный HTTP
+websockets    # WebSocket клиент
+requests      # HTTP запросы (для логина)
+munch         # Удобный доступ к dict
+selectolax    # Парсинг HTML (для профилей)
+sulguk        # HTML-форматирование
+```
 
 ---
 
-## License
+## ❓ FAQ
 
-Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
+### Вопрос: Что такое AUTHCODE?
+
+**Ответ:** Это cookie сессии OK.ru, которая позволяет боту действовать от вашего имени. Без неё бот не сможет подключиться.
+
+---
+
+### Вопрос: Безопасно ли делиться AUTHCODE?
+
+**Ответ:** ❌ **НЕ БЕЗОПАСНО!** AUTHCODE — это как пароль. Если его украдут, смогут:
+- Читать все ваши сообщения
+- Отправлять сообщения от вашего имени
+- Присоединяться к вашим чатам
+- Удалять сообщения
+
+Никогда не выкладывайте его в интернете.
+
+---
+
+### Вопрос: Может ли бот работать 24/7?
+
+**Ответ:** ✅ Да! Бот может работать столько, сколько нужно. Рекомендуется развернуть на VPS или облаке:
+- DigitalOcean, Heroku, AWS
+- Дешёвый VPS: ~2-3$/месяц
+- Docker контейнеризация поддерживается
+
+---
+
+### Вопрос: Поддерживаются ли группы?
+
+**Ответ:** ✅ Да, полностью. Бот может:
+- Читать сообщения в группах
+- Отправлять сообщения
+- Управлять участниками
+- Реагировать на события
+
+---
+
+### Вопрос: Что если аккаунт заблокирует OK.ru?
+
+**Ответ:** OK.ru редко блокирует за ботов. Рекомендуется:
+- Использовать отдельный аккаунт для бота
+- Не спамить сообщения
+- Делать задержки между запросами
+- Соблюдать политику платформы
+
+---
+
+### Вопрос: Можно ли обновить AUTHCODE без перезагрузки?
+
+**Ответ:** ✅ Да:
+```python
+# Получить новый AUTHCODE
+new_authcode = "новый_код"
+
+# Остановить старого бота
+await bot.stop()
+
+# Создать нового с новым кодом
+bot = Vanus(new_authcode)
+await bot.run()
+```
+
+---
+
+### Вопрос: Как обработать ошибки?
+
+**Ответ:** Используйте try/except:
+```python
+@bot.on_message(filters="user")
+async def handler(message):
+    try:
+        await bot.send_reply(message, "Привет!")
+    except Exception as e:
+        logger.error(f"Ошибка: {e}")
+        await bot.send_reply(message, "❌ Ошибка обработки")
+```
+
+---
+
+## 🤝 Вклад
+
+Нашли баг или есть идея? 🎉
+
+1. Fork репозитория
+2. Создайте ветку (`git checkout -b feature/amazing-feature`)
+3. Коммитьте изменения (`git commit -m 'Add amazing feature'`)
+4. Пушьте ветку (`git push origin feature/amazing-feature`)
+5. Откройте Pull Request
+
+---
+
+## 📝 Лицензия
+
+Распространяется под лицензией **MIT**. Подробнее см. [LICENSE](LICENSE).
+
+---
+
+## ⚠️ Дисклеймер
+
+pyokbot — это **неофициальная** библиотека. Она использует публичный WebSocket API OK.ru, используемый официальным клиентом.
+
+**Использование на свой риск!** Автор не несёт ответственность за:
+- Блокировку аккаунта OK.ru
+- Потерю данных
+- Нарушение политики платформы
+
+---
+
+## 📞 Контакты
+
+- **GitHub Issues**: [Сообщить об ошибке](https://github.com/SangoAlgo/pyokbot/issues)
+- **Email**: [SangoAlgo](https://github.com/SangoAlgo)
+
+---
+
+## 🎓 Образовательные ресурсы
+
+Если вы новичок в Python и asyncio, вот полезные ссылки:
+
+- 🐍 [Python Docs](https://docs.python.org/3/)
+- ⚡ [asyncio Tutorial](https://docs.python.org/3/library/asyncio.html)
+- 🤖 [Telegram Bot API](https://core.telegram.org/bots/api) (похожая концепция)
+- 📚 [Real Python](https://realpython.com/)
+
+---
+
+<div align="center">
+
+### Сделано ❤️ для Одноклассников
+
+⭐ **Если нравится проект — дайте звёзду!**
+
+</div>
