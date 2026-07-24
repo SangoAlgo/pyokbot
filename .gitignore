@@ -16,3 +16,6 @@ Thumbs.db
 venv/
 .venv/
 *.log
+site/
+.pytest_cache/
+.coverage

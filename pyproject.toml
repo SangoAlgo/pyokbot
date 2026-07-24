@@ -34,9 +34,32 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/vanusdev/pyokbot"
-Source = "https://github.com/vanusdev/pyokbot"
-BugTracker = "https://github.com/vanusdev/pyokbot/issues"
+Homepage = "https://github.com/SangoAlgo/pyokbot"
+Source = "https://github.com/SangoAlgo/pyokbot"
+BugTracker = "https://github.com/SangoAlgo/pyokbot/issues"
+Documentation = "https://SangoAlgo.github.io/pyokbot"
 
 [tool.setuptools.packages.find]
 include = ["pyokbot*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-mock",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
