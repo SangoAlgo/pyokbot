@@ -1,30 +1,34 @@
-<!-- markdownlint-disable-file -->
-<div align="center">
+<p align="center">
+  <img src="https://placehold.co/600x200/1a1a2e/e94560?text=pyokbot&font=montserrat" alt="pyokbot" width="600">
+</p>
 
 <p align="center">
-  Python library for Odnoklassniki (ok.ru) bots.<br>
-  WebSocket, async, no polling.
+  <em>Python library for Odnoklassniki (ok.ru) bots — WebSocket, async, instant</em>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/pyokbot/"><img src="https://img.shields.io/pypi/v/pyokbot?style=flat-square&logo=pypi&logoColor=white&color=3776AB" alt="PyPI"></a>
-  <a href="https://pypi.org/project/pyokbot/"><img src="https://img.shields.io/pypi/pyversions/pyokbot?style=flat-square&logo=python&logoColor=white&color=3776AB" alt="Python versions"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/pypi/l/pyokbot?style=flat-square&color=green" alt="License"></a>
+  <a href="https://pypi.org/project/pyokbot/"><img src="https://img.shields.io/pypi/pyversions/pyokbot?style=flat-square&logo=python&logoColor=white&color=3776AB" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"></a>
+  <a href="https://github.com/SangoAlgo/pyokbot/actions"><img src="https://img.shields.io/github/actions/workflow/status/SangoAlgo/pyokbot/ci.yml?style=flat-square&logo=github" alt="CI"></a>
   <a href="https://SangoAlgo.github.io/pyokbot"><img src="https://img.shields.io/badge/docs-mkdocs-1a73e8?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
 </p>
 
 <p align="center">
-  ⚠️ Alpha — works, expect rough edges
+  ⚠️ Alpha stage — works, expect rough edges
 </p>
 
-### Минимальный пример
+---
+
+## 📦 What is pyokbot?
+
+**pyokbot** is the only Python library for building bots in Odnoklassniki (ok.ru) messenger. It speaks the **raw WebSocket protocol** that OK.ru's own clients use — no HTTP polling, no delays, no browser automation.
 
 ```python
 import asyncio
 from pyokbot import Vanus
 
 async def main():
-    # Создаём бота с вашим AUTHCODE
     bot = Vanus("YOUR_AUTHCODE")
     await bot.run()
 
@@ -32,232 +36,110 @@ async def main():
     async def ping(message):
         await bot.send_reply(message, "pong!")
 
-    @bot.on_message(commands=["help"])
-    async def cmd_help(message):
-        text = """
-        Доступные команды:
-        /start  — приветствие
-        /help   — этот текст
-        /ping   — проверка
-        /stop   — остановить бота
-        """
-        await bot.send_message(message.chat.id, text)
-
-    # Обработчик всех текстовых сообщений
-    @bot.on_message(filters="user", content_types=["text"])
-    async def echo(message):
-        await bot.send_reply(message, f"Ты написал: {message.text}")
-
-    # Запускаем polling (слушаем сообщения)
     await bot.polling()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-**Запуск:**
-```bash
-python bot.py YOUR_AUTHCODE
-```
-
----
-
-## 📚 Примеры
-
-### 🖼️ Отправка фото с подписью
-
-```python
-@bot.on_message(commands=["photo"])
-async def send_photo_cmd(message):
-    await bot.send_photo(
-        message.chat.id,
-        photo_file_path="path/to/photo.jpg",
-        caption="<b>Вот ваше фото!</b>",
-        parse_mode="html"
-    )
-```
-
-### 🎬 Отправка видео
-
-```python
-@bot.on_message(commands=["video"])
-async def send_video_cmd(message):
-    await bot.send_video(
-        message.chat.id,
-        video_file_path="path/to/video.mp4",
-        caption="Смотри видео!"
-    )
-```
-
-### 🎙️ Отправка голосового сообщения
-
-```python
-@bot.on_message(commands=["voice"])
-async def send_voice_cmd(message):
-    await bot.send_voice(
-        message.chat.id,
-        voice_file_path="path/to/audio.mp3"
-    )
-```
-
-### 🏷️ HTML-форматирование
-
-```python
-@bot.on_message(commands=["format"])
-async def formatted_message(message):
-    html_text = """
-    <b>Жирный текст</b>
-    <i>Курсив</i>
-    <code>моноширинный</code>
-    <a href="https://ok.ru">Ссылка</a>
-    <h1>Заголовок</h1>
-    """
-    await bot.send_message(
-        message.chat.id,
-        html_text,
-        parse_mode="html"
-    )
-```
-
-### 🎯 Фильтры по типам контента
-
-```python
-# Только фото
-@bot.on_message(filters="user", content_types=["photo"])
-async def handle_photo(message):
-    count = len(message.photo)
-    await bot.send_reply(message, f"📸 Получено {count} фото")
-
-# Только видео
-@bot.on_message(filters="user", content_types=["video"])
-async def handle_video(message):
-    await bot.send_reply(message, "🎬 Получено видео")
-
-# Только голос
-@bot.on_message(filters="user", content_types=["audio"])
-async def handle_audio(message):
-    await bot.send_reply(message, "🎙️ Получено голосовое сообщение")
-```
-
-### 👥 Управление чатом
-
-```python
-@bot.on_message(commands=["chatinfo"])
-async def get_chat_info(message):
-    info = await bot.get_chat_info(message.chat.id)
-    text = f"""
-    📌 <b>Информация о чате:</b>
-    
-    Название: {info['title']}
-    Участников: {info['members']['count']}
-    Сообщений: {info['messages']['count']}
-    """
-    await bot.send_message(message.chat.id, text, parse_mode="html")
-
-# Пин-сообщение
-@bot.on_message(commands=["pin"])
-async def pin_message(message):
-    await bot.pin_chat_message(message.chat.id, message.id)
-    await bot.send_reply(message, "📌 Сообщение закреплено")
-
-# Редактировать сообщение
-@bot.on_message(commands=["edit"])
-async def edit_msg(message):
-    await bot.edit_message_text(
-        message.chat.id,
-        message.id,
-        "✏️ <i>Отредактированное сообщение</i>",
-        parse_mode="html"
-    )
-```
-
-### 👤 Информация о пользователе
-
-```python
-@bot.on_message(commands=["whoami"])
-async def who_am_i(message):
-    user_info = await bot.get_user_info(message.user.id)
-    text = f"""
-    👤 <b>Ваш профиль:</b>
-    
-    Имя: {user_info['name']}
-    ID: {user_info['id']}
-    Статус: {user_info['last_visit']}
-    Аватар: {user_info['avatar_url']}
-    """
-    await bot.send_message(message.chat.id, text, parse_mode="html")
-```
-
-### ⌨️ Эмуляция печатания
-
-```python
-@bot.on_message(commands=["wait"])
-async def typing_effect(message):
-    chat_id = message.chat.id
-    
-    # Показываем "печатает..."
-    await bot.writing_emulation(chat_id)
-    
-    # Имитируем обработку
-    await asyncio.sleep(2)
-    
-    await bot.send_message(chat_id, "✅ Готово!")
-```
-
-### 🔄 Контекстный менеджер
-
-```python
-# Автоматически вызовет bot.run() и bot.stop()
-async def main():
-    async with Vanus("YOUR_AUTHCODE") as bot:
-        @bot.on_message(filters="user")
-        async def handler(message):
-            await bot.send_reply(message, message.text)
-        
-        await bot.polling()
 
 asyncio.run(main())
 ```
 
-Ten lines and you have a bot that replies to /ping with pong.
+> A bot that replies to `/ping` with `pong!` in ~10 lines of code.
 
-Whats the deal with okru bots
+---
 
-OK.ru doesn't have a public API for bots. This library speaks the same WebSocket protocol their messenger uses. So messages come through instantly no HTTP polling no waiting around.
+## ✨ Features
 
-Its the only Python library for OK.ru bots. Theres nothing else like it.
+| Feature | Description |
+|---------|-------------|
+| ⚡ **Real-time** | Persistent WebSocket — messages arrive instantly |
+| 🔧 **Commands** | `@bot.on_message(commands=["start"])` handles `/start` |
+| 🎯 **Filters** | Route by content type, text, or sender (user/bot) |
+| 🖼️ **Media** | Send photos, videos, files, voice messages |
+| 📝 **HTML** | Bold, italic, code, headings, links with `parse_mode="html"` |
+| 👥 **Chat admin** | Pin, edit, delete, clear, change title/photo, kick |
+| ⌨️ **Typing** | Show "bot is typing..." before responding |
+| 🔁 **Auto-reconnect** | Exponential backoff when connection drops |
+| 💾 **Cache** | User profiles cached with 1-hour TTL |
+| 🧹 **Clean shutdown** | Ctrl+C handled gracefully |
 
-How it works
+---
 
-You write handlers with a decorator. Tell it what to listen for.
+## 🚀 Quick start
+
+### Install
+
+```bash
+pip install pyokbot
+```
+
+Python 3.9+. You need an `AUTHCODE` cookie from ok.ru — [see the docs](https://SangoAlgo.github.io/pyokbot/installation/) for how to get one.
+
+### Echo bot
+
+```python
+import asyncio
+from pyokbot import Vanus
+
+async def main():
+    bot = Vanus("YOUR_AUTHCODE")
+    await bot.run()
+
+    @bot.on_message(filters="user")
+    async def echo(message):
+        await bot.send_reply(message, f"You said: {message.text}")
+
+    await bot.polling()
+
+asyncio.run(main())
+```
+
+```bash
+python bot.py
+```
+
+---
+
+## 🎮 What it can do
+
+<details>
+<summary><b>📋 Commands</b> — trigger on /start, /help, etc.</summary>
 
 ```python
 @bot.on_message(commands=["start"])
 async def start(message):
-    await bot.send_message(message.chat.id, "Hey Im alive")
-```
+    await bot.send_message(message.chat.id, "Welcome!")
 
-Want to only catch photos from users
+@bot.on_message(commands=["help"])
+async def help(message):
+    await bot.send_message(message.chat.id, "Available: /start, /help, /ping")
+```
+</details>
+
+<details>
+<summary><b>🎯 Filters</b> — route by content type or text</summary>
 
 ```python
 @bot.on_message(filters="user", content_types=["photo"])
 async def on_photo(message):
-    await bot.send_reply(message, "Nice pic")
+    await bot.send_reply(message, "Nice pic!")
+
+@bot.on_message(filters="user", text="hello")
+async def on_hello(message):
+    await bot.send_reply(message, "Hi there!")
 ```
+</details>
 
-You can filter by command name text content type photo video audio file or who sent it user/bot.
-
-Sending stuff
-
-Photos videos files voice messages. Works with a URL or a local path.
+<details>
+<summary><b>🖼️ Media</b> — send photos, videos, files, voice</summary>
 
 ```python
 await bot.send_photo(message.chat.id, "https://example.com/cat.jpg", caption="cat")
 await bot.send_video(message.chat.id, "video.mp4")
 await bot.send_file(message.chat.id, "report.pdf", title="Report")
+await bot.send_voice(message.chat.id, "message.ogg")
 ```
+</details>
 
-Messages can have bold italic code headings links. Just pass parse_mode="html".
+<details>
+<summary><b>📝 HTML formatting</b> — bold, italic, code, links</summary>
 
 ```python
 await bot.send_message(
@@ -266,61 +148,89 @@ await bot.send_message(
     parse_mode="html",
 )
 ```
+</details>
 
-Chat stuff
-
-Pin messages edit delete clear history change the name or photo kick people. You need admin rights for most of it.
+<details>
+<summary><b>👥 Chat management</b> — pin, edit, kick, clear</summary>
 
 ```python
 await bot.pin_chat_message(chat_id, msg_id)
 await bot.edit_message_text(chat_id, msg_id, "new text")
 await bot.clear_chat_history(chat_id, for_all=True)
 await bot.change_chat_title(chat_id, "New Name")
+await bot.delete_member(chat_id, member_id="12345")
 ```
+</details>
 
-Theres also a typing indicator so it looks like the bot is typing before it answers.
+<details>
+<summary><b>⌨️ Typing indicator</b> — "bot is typing..."</summary>
 
 ```python
 await bot.writing_emulation(message.chat.id)
 await asyncio.sleep(1)
-await bot.send_reply(message, "done")
+await bot.send_reply(message, "done!")
 ```
+</details>
 
-Under the hood
+---
 
-Persistent WebSocket so no polling. Auto reconnects if the connection drops. User info gets cached and refreshes every hour. Ctrl+C shuts it down cleanly.
+## 🧠 How handlers work
 
-Install
-
-```bash
-pip install pyokbot
-```
-
-Python 3.9 and up. You need an AUTHCODE cookie from ok.ru the docs tell you how to get it.
-
-Examples
-
-Ready to run bots in the examples folder
-
-- echobot.py — echo bot with commands and media
-- media_bot.py — send photos videos files voice
-- filter_demo_bot.py — shows all the filter types
-- html_demo_bot.py — HTML formatting demo
-- chat_admin_bot.py — manage chats pin edit kick
-
-```bash
-export OK_AUTHCODE="ваш_authcode"
-```
+Handlers are checked in **registration order**. The first match wins.
 
 ```python
-import os
-bot = Vanus(os.getenv("OK_AUTHCODE"))
+@bot.on_message(commands=["start"])    # checked first
+@bot.on_message(commands=["help"])     # checked second
+@bot.on_message(filters="user")        # catch-all, checked last
 ```
 
-Docs
+The message object has attribute-style access:
 
-Full docs at SangoAlgo.github.io/pyokbot
+| Field | Type | Description |
+|-------|------|-------------|
+| `message.text` | `str` | Text content |
+| `message.chat.id` | `str` | Chat ID |
+| `message.user.id` | `str` | Sender ID |
+| `message.id` | `str` | Message ID |
+| `message.photo` | `list` | Photo attachments |
+| `message.video` | `list` | Video attachments |
+| `message.audio` | `dict` | Voice attachment |
+| `message.document` | `dict` | File attachment |
+| `message.is_reply` | `bool` | Is this a reply? |
+| `message.reply` | `dict` | Replied-to message |
 
-License
+---
 
-MIT.
+## 🔧 Examples
+
+Ready-to-run bots in the [`examples/`](examples/) directory:
+
+| Bot | What it does |
+|-----|-------------|
+| [`echobot.py`](examples/echobot.py) | Echo commands, photos, videos, text |
+| [`media_bot.py`](examples/media_bot.py) | Send photos, videos, files, voice |
+| [`filter_demo_bot.py`](examples/filter_demo_bot.py) | All filter types (commands, text, content-type) |
+| [`html_demo_bot.py`](examples/html_demo_bot.py) | HTML formatting with all tags |
+| [`chat_admin_bot.py`](examples/chat_admin_bot.py) | Pin, edit, clear, kick, change title |
+
+```bash
+python examples/echobot.py YOUR_AUTHCODE
+```
+
+---
+
+## 📚 Documentation
+
+Full docs: **[SangoAlgo.github.io/pyokbot](https://SangoAlgo.github.io/pyokbot)**
+
+- [Installation guide](https://SangoAlgo.github.io/pyokbot/installation/)
+- [Quick start](https://SangoAlgo.github.io/pyokbot/quickstart/)
+- [API reference](https://SangoAlgo.github.io/pyokbot/api-reference/)
+- [Examples](https://SangoAlgo.github.io/pyokbot/examples/)
+- [FAQ](https://SangoAlgo.github.io/pyokbot/faq/)
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE).
