@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import time
 from datetime import datetime
-from typing import Optional
+from typing import Any
 
 import aiohttp
 import requests
 
+from .errors import AuthenticationError
 from .logging_config import logger
 
 
@@ -122,17 +122,15 @@ class Login:
         self.tkn = self.get_tkn(self.session)
         self.okweb_token = self.get_okweb_token(self.session, self.tkn)
         if not self.tkn:
-            raise ValueError(
-                "TKN not received — check AUTHCODE validity. "
-                "Make sure you're using a valid AUTHCODE cookie from ok.ru"
+            raise AuthenticationError(
+                "TKN not received -- check that your AUTHCODE cookie is valid"
             )
         if not self.okweb_token:
-            raise ValueError(
-                "OKWEB token not received — check AUTHCODE validity. "
-                "The authentication tokens may have expired."
+            raise AuthenticationError(
+                "OKWEB token not received -- the authentication tokens may have expired"
             )
 
-    async def get_user_info(self, user_id: str) -> dict:
+    async def get_user_info(self, user_id: str) -> dict[str, Any]:
         from selectolax.lexbor import LexborHTMLParser
 
         async with aiohttp.ClientSession(headers=self.session.headers) as session:
@@ -154,5 +152,5 @@ class Login:
                     "last_update_time": str(datetime.now()),
                 }
 
-    async def tst_user(self, user_id: str) -> dict:
+    async def tst_user(self, user_id: str) -> dict[str, Any]:
         return {}

@@ -1,8 +1,8 @@
 # pyokbot
 
-Python library for Odnoklassniki (ok.ru) bots. WebSocket, async, no polling.
+Python library for Odnoklassniki bots. Async, WebSocket, no polling.
 
-pyokbot speaks the raw WebSocket protocol OK.ru's own clients use — messages arrive instantly, no HTTP polling, no delays. It's the only Python library for OK.ru bots.
+pyokbot talks the same WebSocket protocol OK.ru's own clients use. Messages arrive the moment they're sent — no HTTP polling, no delays. It's the only Python library for OK.ru bots.
 
 ```python
 import asyncio
@@ -21,30 +21,27 @@ async def main():
 asyncio.run(main())
 ```
 
-## Features
+## What you get
 
-| Feature             | What it does                                                |
-| ------------------- | ----------------------------------------------------------- |
-| **Commands**        | `/start`, `/help`, `/ping` — any command you define         |
-| **Filters**         | Route by user/bot, exact text, or content type              |
-| **Media**           | Send photos, videos, files, voice messages                  |
-| **HTML formatting** | Bold, italic, code, headings, links in messages             |
-| **Chat admin**      | Pin, edit, delete, clear history, kick, rename              |
-| **Typing indicator**| Show "bot is typing..." before responding                   |
-| **Auto-reconnect**  | Exponential backoff on WebSocket disconnection              |
-| **User info cache** | Profile data cached for 1 hour to avoid repeated lookups    |
+| Feature | What it does |
+|---|---|
+| **Commands** | `/start`, `/help`, `/ping` — anything you like |
+| **Filters** | Route by sender, text, or content type |
+| **Media** | Photos, videos, files, voice messages |
+| **HTML formatting** | Bold, italic, code, headings, links |
+| **Chat admin** | Pin, edit, delete, clear, kick, rename |
+| **Typing indicator** | Show "bot is typing..." before you reply |
+| **Auto-reconnect** | Exponential backoff when the connection drops |
+| **User info cache** | Profile data cached for an hour |
 
-## Why pyokbot?
+## Why this exists
 
-- **One-of-a-kind** — the only Python library that talks to OK.ru's real-time messaging API
-- **Instant** — WebSocket pushes messages the moment they're sent, no polling interval
-- **Pure async** — built on `asyncio` + `aiohttp` from the ground up
-- **Simple** — one class, one decorator, a handful of send methods; no 500-page manual
+pyokbot is the only library that talks to OK.ru's real-time messaging API. It's pure async — built on `asyncio` and `aiohttp` from the ground up. One class, one decorator, a handful of send methods. That's it.
 
 ## Next steps
 
 - [Installation](installation.md) — get your auth code and install the library
-- [Quick Start](quickstart.md) — build your first bot in 5 minutes
-- [Guide](guide/commands.md) — learn every feature step by step
-- [Examples](examples.md) — ready-to-run bots in the repo
-- [FAQ](faq.md) — common questions and troubleshooting
+- [Quick Start](quickstart.md) — your first bot in 5 minutes
+- [Guide](guide/commands.md) — learn every feature
+- [Examples](examples.md) — ready-to-run bots
+- [FAQ](faq.md) — common questions

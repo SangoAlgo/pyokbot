@@ -14,7 +14,7 @@ Create a new bot instance.
 | ------------ | ------ | -------------------------------------- |
 | `auth_code`  | `str`  | The `AUTHCODE` cookie value from ok.ru |
 
-The constructor validates the auth code and sets up the WebSocket connection. It doesn't connect yet — call `run()` for that.
+The constructor validates the auth code and sets up the WebSocket connection. Nothing happens yet — call `run()` for that.
 
 ```python
 bot = Vanus("YOUR_AUTHCODE")
@@ -61,13 +61,13 @@ Each incoming message goes through:
 2. **Parsing** — raw WebSocket data is converted into a structured message object
 3. **Deduplication** — messages already handled are skipped
 4. **Filter matching** — each handler's filters are checked against the message
-5. **Dispatch** — the first matching handler runs asynchronously
+5. **Dispatch** — the first matching handler runs
 
 ---
 
 #### `await stop()`
 
-Disconnect from OK.ru and clean up resources.
+Disconnect from OK.ru and clean up.
 
 - Closes the WebSocket connection
 - Cancels the polling task
@@ -124,7 +124,7 @@ async def handler(message):
 | `"video"`    | Messages containing a video      |
 | `"audio"`    | Voice messages                   |
 | `"document"` | File attachments                 |
-| `"text"`     | Plain text without media         |
+| `"text"`     | Plain text — no media            |
 | `"commands"` | Any message starting with `/`    |
 
 **Handler order:** Handlers run in the order you register them. The first match wins — remaining handlers are skipped.
@@ -217,7 +217,7 @@ await bot.send_video(chat_id, "https://example.com/video.mp4")
 
 #### `await send_file(chat_id, file_path, title=None, repl_to_message=None)`
 
-Send any file type (PDF, ZIP, documents, etc.).
+Send any file type — PDF, ZIP, whatever.
 
 | Parameter         | Type     | Description                                |
 | ----------------- | -------- | ------------------------------------------ |
@@ -299,7 +299,7 @@ await bot.change_chat_title(chat_id, "New Name")
 
 #### `await change_chat_photo(chat_id, photo_file_path)`
 
-Change the chat's avatar image.
+Change the chat's avatar.
 
 | Parameter          | Type     | Description                |
 | ------------------ | -------- | -------------------------- |
@@ -366,7 +366,7 @@ await bot.clear_chat_history(chat_id, for_all=True) # clear for everyone
 
 #### `await edit_message_text(chat_id, message_id, message_text, parse_mode=None)`
 
-Edit the text of a previously sent message.
+Edit a previously sent message.
 
 | Parameter      | Type    | Description                                |
 | -------------- | ------- | ------------------------------------------ |
@@ -403,13 +403,13 @@ await bot.pin_chat_message(chat_id, message_id)
 
 #### `await writing_emulation(chat_id)`
 
-Show a "bot is typing..." indicator in a chat. The indicator lasts about 5 seconds and clears automatically.
+Show a "bot is typing..." indicator in a chat. Lasts about 5 seconds and clears on its own.
 
 | Parameter | Type   | Description       |
 | --------- | ------ | ----------------- |
 | `chat_id` | `str`  | Target chat ID    |
 
-Call this before sending a reply to signal that the bot is working:
+Call this before sending a reply to signal the bot is working:
 
 ```python
 await bot.writing_emulation(message.chat.id)
@@ -421,7 +421,7 @@ await bot.send_reply(message, "Done!")
 
 #### `await get_user_info(user_id)`
 
-Fetch a user's profile information. Results are cached for 1 hour to avoid repeated lookups.
+Fetch a user's profile. Results are cached for an hour to avoid repeated lookups.
 
 | Parameter | Type   | Description        |
 | --------- | ------ | ------------------ |
@@ -437,7 +437,7 @@ Returns a dict with:
 | `last_visit`      | `str`    | Last visit description              |
 | `last_update_time`| `str`    | Timestamp of last cache update      |
 
-The cache is stored in `~/.pyokbot_cache.json` and persists across bot restarts.
+The cache lives in `~/.pyokbot_cache.json` and persists across restarts.
 
 ```python
 info = await bot.get_user_info("12345")
@@ -454,7 +454,7 @@ Check if a user is currently logged in to OK.ru.
 | --------- | ------ | ------------------ |
 | `user_id` | `str`  | OK.ru user ID      |
 
-Returns a dict (currently may be empty depending on endpoint availability).
+Returns a dict (may be empty depending on endpoint availability).
 
 ```python
 status = await bot.tst_user("12345")
@@ -464,7 +464,7 @@ status = await bot.tst_user("12345")
 
 #### `await socket_reconect_count()`
 
-Return the total number of times the WebSocket has reconnected during this session.
+Return the total number of WebSocket reconnections this session.
 
 ```python
 count = await bot.socket_reconect_count()

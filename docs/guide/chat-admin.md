@@ -2,85 +2,80 @@
 
 Manage chats when your bot has admin rights.
 
-## Requirements
+## What you need
 
-Your bot must be an administrator in the chat for most of these methods to work. If it isn't, the call will fail silently.
+Your bot must be an administrator in the chat for most of these to work. If it isn't, the call will fail silently.
 
 ## Chat info
 
-Fetch metadata about a chat:
+Fetch metadata about a chat — title, members, pinned message, and more.
 
 ```python
 info = await bot.get_chat_info(chat_id)
 ```
 
-Returns a dict with `title`, `status`, `link`, `owner`, `members` (count + list), `messages` (count + last message), `images` (small + full icon), and optionally `pinned`.
+Returns a dict with `title`, `status`, `link`, `owner`, `members` (count + list), `messages` (count + last message), `images`, and optionally `pinned`.
 
-## Pinning messages
+## Pin a message
 
 ```python
 await bot.pin_chat_message(chat_id, message_id)
 ```
 
-The message ID is available on `message.id` inside any handler.
+Get the message ID from `message.id` inside any handler.
 
-## Editing messages
+## Edit a message
 
 ```python
 await bot.edit_message_text(chat_id, message_id, "New text", parse_mode="html")
 ```
 
-Edits the text of a previously sent message. `parse_mode` is optional.
+Edit any message your bot has sent. `parse_mode` is optional.
 
-## Deleting messages
+## Delete messages
 
 ```python
-# Single message
+# One message
 await bot.delete_message(chat_id, message_id=msg_id)
 
-# Multiple messages
+# Several at once
 await bot.delete_message(chat_id, message_ids=[msg1, msg2, msg3])
 ```
 
-## Clearing history
+## Clear chat history
 
 ```python
-# Clear for yourself only
+# For you only
 await bot.clear_chat_history(chat_id)
 
-# Clear for everyone
+# For everyone
 await bot.clear_chat_history(chat_id, for_all=True)
 ```
 
-## Renaming a chat
+## Rename a chat
 
 ```python
 await bot.change_chat_title(chat_id, "New Chat Name")
 ```
 
-## Changing the chat photo
+## Change the chat photo
 
 ```python
 await bot.change_chat_photo(chat_id, "/path/to/new_avatar.jpg")
 ```
 
-Accepts both URLs and local file paths, just like [media sending](media.md).
+Works with both URLs and local file paths — same as [sending media](media.md).
 
-## Removing members
+## Remove members
 
 ```python
-# Single member
+# One person
 await bot.delete_member(chat_id, member_id=user_id)
 
-# Multiple members
+# Several at once
 await bot.delete_member(chat_id, member_ids=[user1, user2])
 ```
 
 ## Full example
 
-See [`examples/chat_admin_bot.py`](https://github.com/SangoAlgo/pyokbot/blob/main/examples/chat_admin_bot.py) for a bot with `/pin`, `/edit`, `/clear`, `/title`, and `/info` commands.
-
-## Notes
-
-- `change_chat_photo` uploads the image file, so local paths or URLs both work.
-- Clearing history with `for_all=True` affects every member of the chat.
+See [`examples/chat_admin_bot.py`](https://github.com/SangoAlgo/pyokbot/blob/main/examples/chat_admin_bot.py) — a bot with `/pin`, `/edit`, `/clear`, `/title`, and `/info` commands.

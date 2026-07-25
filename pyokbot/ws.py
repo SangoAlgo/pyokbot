@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import websockets
 
-from .opcodes import MessageOpcode
+from .errors import AuthenticationError
 from .logging_config import logger
+from .opcodes import MessageOpcode
+
+if TYPE_CHECKING:
+    from .login import Login
 
 
 class Ws:
@@ -30,7 +34,7 @@ class Ws:
     RECONNECT_DELAY: int = 5
     """Base delay (seconds) for exponential backoff reconnection."""
 
-    def __init__(self, login: "Login") -> None:
+    def __init__(self, login: Login) -> None:
         """
         Initialize WebSocket connection handler.
 
@@ -65,9 +69,9 @@ class Ws:
                 logger.warning(f"Timeout waiting for opcode {opcode}")
                 return None
 
-    async def start(self, AUTHCODE: str, okweb_token: str):
+    async def start(self, authcode: str, okweb_token: str):
         """Start the WebSocket connection loop. Reconnects on disconnect."""
-        self.AUTHCODE = AUTHCODE
+        self.AUTHCODE = authcode
         self.okweb_token = okweb_token
         while True:
             try:
@@ -105,7 +109,7 @@ class Ws:
                     break
         send_lock = asyncio.Lock()
 
-        async def send(ws: websockets.WebSocketClientProtocol, pkt: Dict) -> None:
+        async def send(ws: websockets.WebSocketClientProtocol, pkt: dict) -> None:
             """Send a JSON packet with sequence number."""
             async with send_lock:
                 self.seq += 1
@@ -222,7 +226,7 @@ class Ws:
 
                     elif op == MessageOpcode.AUTH:
                         if p.get("error"):
-                            raise Exception("AUTH FAILED")
+                            raise AuthenticationError(f"OK.ru rejected auth: {p['error']}")
                         self.authorized = True
                         self.socket_reconect_counter = 0
                         self.authorized_event.set()

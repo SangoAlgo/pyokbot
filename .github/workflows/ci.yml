@@ -7,11 +7,26 @@ on:
     branches: [main, master]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install ruff mypy
+      - name: Ruff check
+        run: ruff check pyokbot/
+      - name: MyPy check
+        run: mypy pyokbot/ --ignore-missing-imports
+
+  test:
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v5
@@ -30,7 +45,7 @@ jobs:
         run: python -m pytest tests/ -v --cov=pyokbot --cov-report=term-missing
 
       - name: Upload coverage
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           fail_ci_if_error: false

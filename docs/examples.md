@@ -1,17 +1,17 @@
 # Examples
 
-All examples live in the [`examples/`](https://github.com/SangoAlgo/pyokbot/tree/main/examples) directory.
+All examples live in the [`examples/`](https://github.com/SangoAlgo/pyokbot/tree/main/examples) directory. Run any of them with your AUTHCODE:
+
+```bash
+python examples/echobot.py YOUR_AUTHCODE
+```
 
 ## echobot.py
 
-A classic echo bot.
-
-```bash
-python examples/echobot.py AUTHCODE
-```
+A classic echo bot. Commands, media replies, catch-all echo.
 
 - `/start` — welcome message
-- `/help` — list of commands
+- `/help` — command list
 - `/info` — your name, ID, status
 - `/ping` — bot replies `pong!`
 - `/stop` — shuts the bot down
@@ -20,11 +20,7 @@ python examples/echobot.py AUTHCODE
 
 ## media_bot.py
 
-Sending different types of media.
-
-```bash
-python examples/media_bot.py AUTHCODE
-```
+Send different types of media on command.
 
 - `/photo` — send a photo from URL
 - `/video` — send a video file
@@ -33,11 +29,7 @@ python examples/media_bot.py AUTHCODE
 
 ## filter_demo_bot.py
 
-Every filter type in one bot.
-
-```bash
-python examples/filter_demo_bot.py AUTHCODE
-```
+Every filter type in action — shows how to combine filters and what matches.
 
 - `commands=["start"]` — `/start`
 - `text="hello"` — exact match
@@ -50,11 +42,7 @@ python examples/filter_demo_bot.py AUTHCODE
 
 ## html_demo_bot.py
 
-All supported HTML tags.
-
-```bash
-python examples/html_demo_bot.py AUTHCODE
-```
+All supported HTML tags in one bot.
 
 ```
 <b>bold</b> <i>italic</i> <u>underline</u> <s>strikethrough</s>
@@ -64,11 +52,7 @@ python examples/html_demo_bot.py AUTHCODE
 
 ## chat_admin_bot.py
 
-Chat management commands (you need admin rights in the chat).
-
-```bash
-python examples/chat_admin_bot.py AUTHCODE
-```
+Chat management commands. You'll need admin rights in the chat for these to work.
 
 - `/pin <message_id>` — pin a message
 - `/edit <id> <new text>` — edit a message

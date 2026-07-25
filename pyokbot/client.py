@@ -3,20 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Optional
 
 import aiohttp
 from munch import Munch
 
+from .logging_config import logger
 from .login import Login
-from .ws import Ws
 from .messages import Messages
 from .opcodes import MessageOpcode
-from .logging_config import logger
+from .ws import Ws
 
 
 class Vanus:
@@ -338,7 +337,7 @@ class Vanus:
         if method == "GET":
             try:
                 if os.path.exists(cache_path):
-                    with open(cache_path, "r", encoding="utf-8") as f:
+                    with open(cache_path, encoding="utf-8") as f:
                         data = json.load(f)
                         return data if data is not None else {}
                 return {}

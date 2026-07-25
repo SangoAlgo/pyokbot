@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import random
 import time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 import aiohttp
 from sulguk import transform_html
 
+from .errors import APIError, TimeoutError, UploadError
 from .opcodes import MessageOpcode
-from .logging_config import logger
 
-TYPE_BRIDGE: Dict[str, str] = {
+if TYPE_CHECKING:
+    from .ws import Ws
+
+TYPE_BRIDGE: dict[str, str | None] = {
     "bold": "STRONG",
     "text_link": "LINK",
     "underline": "UNDERLINE",
@@ -26,13 +28,13 @@ TYPE_BRIDGE: Dict[str, str] = {
 
 class Messages:
 
-    def __init__(self, bot_info: dict, session: aiohttp.ClientSession):
+    def __init__(self, bot_info: dict, session: aiohttp.ClientSession) -> None:
         self.bot_info = bot_info
         self._session = session
 
     @staticmethod
-    def _to_ok(entities: list) -> list:
-        parsed: list = []
+    def _to_ok(entities: list) -> list[dict]:
+        parsed: list[dict] = []
         for entity in entities:
             t = entity.get("type")
             if t == "text_link":
@@ -93,7 +95,7 @@ class Messages:
                     parsed[i]["type"] = parsed_orig[i]["type"]
         return [parsed, result.text]
 
-    def generate_message_object(self, message: dict) -> Optional[dict]:
+    def generate_message_object(self, message: dict) -> dict | None:
         if not (message.get("opcode") == MessageOpcode.INCOMING_MESSAGE
                 and isinstance(message.get("payload"), dict)
                 and isinstance(message["payload"].get("message"), dict)
@@ -153,34 +155,42 @@ class Messages:
         self,
         file_path: str,
         upload_url: str,
-        file_type: str,
-        file_name: Optional[str] = None,
-        token: Optional[str] = None,
+        file_type: str = "",
+        file_name: str | None = None,
+        token: str | None = None,
     ) -> str:
-        if file_path.startswith("http"):
-            async with self._session.get(file_path) as resp:
-                blob = await resp.read()
-        else:
-            with open(file_path, "rb") as f:
-                blob = f.read()
+        try:
+            if file_path.startswith("http"):
+                async with self._session.get(file_path) as resp:
+                    blob = await resp.read()
+            else:
+                with open(file_path, "rb") as f:
+                    blob = f.read()
+        except (OSError, aiohttp.ClientError) as e:
+            raise UploadError(f"Could not read file {file_path}: {e}") from e
+
         data = aiohttp.FormData()
-        if file_type == "AUDIO":
-            data.add_field("file", blob, filename=file_name or "file.mp3", content_type="audio/mpeg")
-        elif file_type == "PHOTO":
-            data.add_field("file", blob, filename=file_name or "file.png", content_type="image/jpeg")
-        elif file_type == "VIDEO":
-            data.add_field("file", blob, filename=file_name or "file.mp4", content_type="video/mp4")
+        content_types = {
+            "AUDIO": "audio/mpeg",
+            "PHOTO": "image/jpeg",
+            "VIDEO": "video/mp4",
+        }
+        ct = content_types.get(file_type, "application/octet-stream")
+        data.add_field("file", blob, filename=file_name or "file", content_type=ct)
         if token is not None:
             data.add_field("token", token)
-        async with self._session.post(upload_url, data=data) as resp:
-            return await resp.text()
+        try:
+            async with self._session.post(upload_url, data=data) as resp:
+                return await resp.text()
+        except aiohttp.ClientError as e:
+            raise UploadError(f"Upload to {upload_url} failed: {e}") from e
 
     async def send_message(
         self,
-        ws,
+        ws: Ws,
         chat_id: str,
         message_text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
     ) -> None:
         parse_elements: list = []
         if parse_mode == "html":
@@ -208,10 +218,10 @@ class Messages:
 
     async def send_reply(
         self,
-        ws,
+        ws: Ws,
         message: dict,
         message_text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
         reply_to_repl: bool = False,
     ) -> None:
         parse_elements: list = []
@@ -243,13 +253,13 @@ class Messages:
 
     async def send_photo(
         self,
-        ws,
-        chat_id: int,
+        ws: Ws,
+        chat_id: str,
         photo_file_path: str,
-        caption: Optional[str] = None,
-        repl_to_message: Optional[str] = None,
-        parse_mode: Optional[str] = None,
-    ) -> Optional[dict]:
+        caption: str | None = None,
+        repl_to_message: str | None = None,
+        parse_mode: str | None = None,
+    ) -> dict | None:
         parse_elements: list = []
         if caption:
             if parse_mode == "html":
@@ -268,21 +278,24 @@ class Messages:
             "payload": {"count": 1, "profile": False}
         }))
         msg = await ws.wait_for_message(MessageOpcode.PHOTO_UPLOAD, timeout=15)
-        if msg is None or not isinstance(msg.get("payload"), dict):
-            raise RuntimeError("upload_url timeout or invalid response")
-        upload_url = msg["payload"].get("url")
+        if msg is None:
+            raise TimeoutError("Photo upload URL: server did not respond in time")
+        payload = msg.get("payload")
+        if not isinstance(payload, dict):
+            raise APIError("Photo upload: server returned an unexpected response")
+        upload_url = payload.get("url")
         if not upload_url:
-            raise RuntimeError("no upload URL in server response")
+            raise APIError("Photo upload: server did not provide an upload URL")
         response_text = await self.upload_file(photo_file_path, upload_url, file_type="PHOTO")
         try:
             photos = json.loads(response_text).get("photos")
-        except json.JSONDecodeError:
-            raise RuntimeError(f"upload response not JSON: {response_text[:200]}")
+        except json.JSONDecodeError as e:
+            raise UploadError(f"Upload response was not valid JSON: {response_text[:200]}") from e
         if not photos:
-            raise RuntimeError(f"no 'photos' in upload response: {response_text[:200]}")
+            raise UploadError(f"No photo data in upload response: {response_text[:200]}")
         token = next(iter(photos.values())).get("token")
         if not token:
-            raise RuntimeError("no token in photo metadata")
+            raise UploadError("Photo upload finished but no token was returned")
         cid = int(time.time() * 1000)
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": seq_base + 3, "opcode": 5,
@@ -310,17 +323,17 @@ class Messages:
         await ws._conn.send(json.dumps(pkt))
         confirmation = await ws.wait_for_message(MessageOpcode.SEND_MESSAGE, timeout=15)
         if confirmation is None:
-            raise RuntimeError("no send confirmation (timeout)")
+            raise TimeoutError("Photo send: no confirmation from server")
         return confirmation
 
     async def send_video(
         self,
-        ws,
-        chat_id: int,
+        ws: Ws,
+        chat_id: str,
         video_file_path: str,
-        caption: Optional[str] = None,
-        repl_to_message: Optional[str] = None,
-        parse_mode: Optional[str] = None,
+        caption: str | None = None,
+        repl_to_message: str | None = None,
+        parse_mode: str | None = None,
     ) -> bool:
         parse_elements: list = []
         if caption and parse_mode == "html":
@@ -339,7 +352,12 @@ class Messages:
             "payload": {"count": 1, "audio": False}
         }))
         msg = await ws.wait_for_message(MessageOpcode.MEDIA_UPLOAD)
-        info = msg["payload"]["info"][0]
+        if msg is None:
+            raise TimeoutError("Video upload URL: server did not respond in time")
+        try:
+            info = msg["payload"]["info"][0]
+        except (KeyError, IndexError, TypeError) as e:
+            raise APIError("Video upload: server returned an unexpected response") from e
         await self.upload_file(video_file_path, info["url"])
         cid = int(time.time() * 1000)
         pkt = {
@@ -361,11 +379,11 @@ class Messages:
 
     async def send_file(
         self,
-        ws,
-        chat_id: int,
+        ws: Ws,
+        chat_id: str,
         file_path: str,
-        title: Optional[str] = None,
-        repl_to_message: Optional[str] = None,
+        title: str | None = None,
+        repl_to_message: str | None = None,
     ) -> bool:
         seq_base = random.randint(0, 9999)
         await ws._conn.send(json.dumps({
@@ -379,9 +397,16 @@ class Messages:
             "payload": {"count": 1}
         }))
         msg = await ws.wait_for_message(MessageOpcode.FILE_UPLOAD)
-        info = msg["payload"]["info"][0]
+        if msg is None:
+            raise TimeoutError("File upload URL: server did not respond in time")
+        try:
+            info = msg["payload"]["info"][0]
+        except (KeyError, IndexError, TypeError) as e:
+            raise APIError("File upload: server returned an unexpected response") from e
         await self.upload_file(file_path, info["url"], file_name=title, token=info["token"])
-        msg = await ws.wait_for_message(MessageOpcode.FILE_PUBLISHED)
+        publish = await ws.wait_for_message(MessageOpcode.FILE_PUBLISHED)
+        if publish is None:
+            raise TimeoutError("File upload: server did not confirm publication")
         cid = int(time.time() * 1000)
         pkt = {
             "ver": 10, "cmd": 0, "seq": seq_base + 3,
@@ -401,10 +426,10 @@ class Messages:
 
     async def send_voice(
         self,
-        ws,
-        chat_id: int,
+        ws: Ws,
+        chat_id: str,
         voice_file_path: str,
-        repl_to_message: Optional[str] = None,
+        repl_to_message: str | None = None,
     ) -> bool:
         seq_base = random.randint(0, 9999)
         await ws._conn.send(json.dumps({
@@ -418,9 +443,16 @@ class Messages:
             "payload": {"count": 1, "audio": True}
         }))
         msg = await ws.wait_for_message(MessageOpcode.MEDIA_UPLOAD)
-        info = msg["payload"]["info"][0]
+        if msg is None:
+            raise TimeoutError("Voice upload URL: server did not respond in time")
+        try:
+            info = msg["payload"]["info"][0]
+        except (KeyError, IndexError, TypeError) as e:
+            raise APIError("Voice upload: server returned an unexpected response") from e
         await self.upload_file(voice_file_path, info["url"])
-        await ws.wait_for_message(MessageOpcode.FILE_PUBLISHED)
+        publish = await ws.wait_for_message(MessageOpcode.FILE_PUBLISHED)
+        if publish is None:
+            raise TimeoutError("Voice upload: server did not confirm publication")
         cid = int(time.time() * 1000)
         pkt = {
             "ver": 10, "cmd": 0, "seq": seq_base + 3,
@@ -438,7 +470,7 @@ class Messages:
         await ws._conn.send(json.dumps(pkt))
         return True
 
-    async def writing_emulation(self, ws, chat_id: str) -> bool:
+    async def writing_emulation(self, ws: Ws, chat_id: str) -> bool:
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
             "opcode": MessageOpcode.REQUEST_UPLOAD,
@@ -448,11 +480,11 @@ class Messages:
 
     async def edit_message_text(
         self,
-        ws,
+        ws: Ws,
         chat_id: str,
         message_id: str,
         message_text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
     ) -> bool:
         parse_elements: list = []
         if parse_mode == "html":
@@ -472,7 +504,7 @@ class Messages:
         }))
         return True
 
-    async def pin_chat_message(self, ws, chat_id: str, message_id: str) -> bool:
+    async def pin_chat_message(self, ws: Ws, chat_id: str, message_id: str) -> bool:
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
             "opcode": MessageOpcode.CHAT_SETTINGS,
@@ -484,7 +516,7 @@ class Messages:
         }))
         return True
 
-    async def change_chat_title(self, ws, chat_id: str, title: str) -> bool:
+    async def change_chat_title(self, ws: Ws, chat_id: str, title: str) -> bool:
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
             "opcode": MessageOpcode.CHAT_SETTINGS,
@@ -492,7 +524,7 @@ class Messages:
         }))
         return True
 
-    async def change_chat_photo(self, ws, chat_id: int, photo_file_path: str) -> bool:
+    async def change_chat_photo(self, ws: Ws, chat_id: str, photo_file_path: str) -> bool:
         seq_base = random.randint(0, 9999)
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": seq_base + 2,
@@ -500,10 +532,19 @@ class Messages:
             "payload": {"count": 1, "profile": False}
         }))
         msg = await ws.wait_for_message(MessageOpcode.PHOTO_UPLOAD)
-        upload_url = msg["payload"]["url"]
+        if msg is None:
+            raise TimeoutError("Chat photo upload: server did not respond in time")
+        upload_url = msg.get("payload", {}).get("url")
+        if not upload_url:
+            raise APIError("Chat photo upload: server did not provide an upload URL")
         response = await self.upload_file(photo_file_path, upload_url)
-        response = json.loads(response).get("photos")
-        token = next(iter(response.values())).get("token")
+        try:
+            response = json.loads(response).get("photos")
+        except json.JSONDecodeError as e:
+            raise UploadError(f"Chat photo upload response was not JSON: {response[:200]}") from e
+        token = next(iter(response.values())).get("token") if response else None
+        if not token:
+            raise UploadError("Chat photo upload: no token in response")
         cid = int(time.time() * 1000)
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": seq_base + 3,
@@ -520,10 +561,10 @@ class Messages:
 
     async def delete_member(
         self,
-        ws,
+        ws: Ws,
         chat_id: str,
-        member_ids: Optional[list] = None,
-        member_id: Optional[str] = None,
+        member_ids: list[str] | None = None,
+        member_id: str | None = None,
     ) -> bool:
         ids = member_ids if member_ids is not None else [member_id]
         await ws._conn.send(json.dumps({
@@ -538,10 +579,10 @@ class Messages:
 
     async def delete_message(
         self,
-        ws,
+        ws: Ws,
         chat_id: str,
-        message_ids: Optional[list] = None,
-        message_id: Optional[str] = None,
+        message_ids: list[str] | None = None,
+        message_id: str | None = None,
     ) -> bool:
         ids = message_ids if message_ids is not None else [str(message_id)]
         ids = [str(i) for i in ids]
@@ -558,7 +599,7 @@ class Messages:
         }))
         return True
 
-    async def clear_chat_history(self, ws, chat_id: str, for_all: Optional[bool] = None) -> bool:
+    async def clear_chat_history(self, ws: Ws, chat_id: str, for_all: bool | None = None) -> bool:
         await ws._conn.send(json.dumps({
             "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
             "opcode": MessageOpcode.CLEAR_HISTORY,

@@ -16,11 +16,11 @@ async def on_help(message):
 
 ## Parameters
 
-| Parameter    | Type         | Description                                  |
-| ------------ | ------------ | -------------------------------------------- |
-| `commands`   | `list[str]`  | Command names without the `/` prefix         |
+| Parameter  | Type         | Description                          |
+|------------|--------------|--------------------------------------|
+| `commands` | `list[str]`  | Command names — no `/` prefix needed |
 
-You can combine commands with other filters — see [Filters](filters.md).
+You can combine commands with other filters. See [Filters](filters.md).
 
 ## Handler order
 
@@ -32,7 +32,7 @@ Handlers run in the order you register them. The first match wins:
 @bot.on_message(filters="user")        # catch-all, checked last
 ```
 
-If you register a catch-all handler (no `commands`) after your command handlers, it fires for everything that doesn't match a command.
+If you put a catch-all handler (no `commands`) after your command handlers, it fires for everything that doesn't match.
 
 ## Full example
 
@@ -52,7 +52,7 @@ async def main():
     async def cmd_help(message):
         await bot.send_message(
             message.chat.id,
-            "/start — welcome\n/help — this message\n/ping — pong!"
+            "/start — welcome\n/help — this\n/ping — pong!"
         )
 
     @bot.on_message(commands=["ping"])
@@ -64,7 +64,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## Notes
+## A few things to know
 
-- Commands are case-sensitive: `/Start` won't match `commands=["start"]`.
-- Arguments after the command (`/start arg1 arg2`) are ignored by the command matcher — you can parse `message.text` manually if you need them.
+- Commands are case-sensitive. `/Start` won't match `commands=["start"]`.
+- Arguments after the command (`/start arg1 arg2`) are ignored by the matcher. Parse `message.text` manually if you need them.
