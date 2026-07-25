@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <em>Python library for Odnoklassniki (ok.ru) bots — WebSocket, async, instant</em>
+  <em>Python library for Odnoklassniki (ok.ru) bots</em>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ## 📦 What is pyokbot?
 
-**pyokbot** is the only Python library for building bots in Odnoklassniki (ok.ru) messenger. It speaks the **raw WebSocket protocol** that OK.ru's own clients use — no HTTP polling, no delays, no browser automation.
+**pyokbot** is the only Python library for building bots in Odnoklassniki (ok.ru). You just write handlers and send messages.
 
 ```python
 import asyncio
@@ -45,14 +45,14 @@ asyncio.run(main())
 
 | Feature | Description |
 |---------|-------------|
-| ⚡ **Real-time** | Persistent WebSocket — messages arrive instantly |
+| ⚡ **Real-time** | Messages arrive as soon as they're sent |
 | 🔧 **Commands** | `@bot.on_message(commands=["start"])` handles `/start` |
 | 🎯 **Filters** | Route by content type, text, or sender (user/bot) |
 | 🖼️ **Media** | Send photos, videos, files, voice messages |
 | 📝 **HTML** | Bold, italic, code, headings, links with `parse_mode="html"` |
 | 👥 **Chat admin** | Pin, edit, delete, clear, change title/photo, kick |
 | ⌨️ **Typing** | Show "bot is typing..." before responding |
-| 🔁 **Auto-reconnect** | Exponential backoff when connection drops |
+| 🔁 **Auto-reconnect** | Reconnects when connection drops |
 | 💾 **Cache** | User profiles cached with 1-hour TTL |
 | 🧹 **Clean shutdown** | Ctrl+C handled gracefully |
 
@@ -66,7 +66,7 @@ asyncio.run(main())
 pip install pyokbot
 ```
 
-Python 3.9+. You need an `AUTHCODE` cookie from ok.ru — [see the docs](https://SangoAlgo.github.io/pyokbot/installation/) for how to get one.
+Python 3.9+. You need an `AUTHCODE` cookie from ok.ru - [see the docs](https://SangoAlgo.github.io/pyokbot/installation/) for how to get one.
 
 ### Echo bot
 
@@ -96,7 +96,7 @@ python bot.py
 ## 🎮 What it can do
 
 <details>
-<summary><b>📋 Commands</b> — trigger on /start, /help, etc.</summary>
+<summary><b>📋 Commands</b> - trigger on /start, /help, etc.</summary>
 
 ```python
 @bot.on_message(commands=["start"])
@@ -110,7 +110,7 @@ async def help(message):
 </details>
 
 <details>
-<summary><b>🎯 Filters</b> — route by content type or text</summary>
+<summary><b>🎯 Filters</b> - route by content type or text</summary>
 
 ```python
 @bot.on_message(filters="user", content_types=["photo"])
@@ -124,7 +124,7 @@ async def on_hello(message):
 </details>
 
 <details>
-<summary><b>🖼️ Media</b> — send photos, videos, files, voice</summary>
+<summary><b>🖼️ Media</b> - send photos, videos, files, voice</summary>
 
 ```python
 await bot.send_photo(message.chat.id, "https://example.com/cat.jpg", caption="cat")
@@ -135,7 +135,7 @@ await bot.send_voice(message.chat.id, "message.ogg")
 </details>
 
 <details>
-<summary><b>📝 HTML formatting</b> — bold, italic, code, links</summary>
+<summary><b>📝 HTML formatting</b> - bold, italic, code, links</summary>
 
 ```python
 await bot.send_message(
@@ -147,7 +147,7 @@ await bot.send_message(
 </details>
 
 <details>
-<summary><b>👥 Chat management</b> — pin, edit, kick, clear</summary>
+<summary><b>👥 Chat management</b> - pin, edit, kick, clear</summary>
 
 ```python
 await bot.pin_chat_message(chat_id, msg_id)
@@ -159,7 +159,7 @@ await bot.delete_member(chat_id, member_id="12345")
 </details>
 
 <details>
-<summary><b>⌨️ Typing indicator</b> — "bot is typing..."</summary>
+<summary><b>⌨️ Typing indicator</b> - "bot is typing..."</summary>
 
 ```python
 await bot.writing_emulation(message.chat.id)
@@ -229,4 +229,4 @@ Full docs: **[SangoAlgo.github.io/pyokbot](https://SangoAlgo.github.io/pyokbot)*
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
