@@ -6,7 +6,7 @@ import os
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 import aiohttp
 from munch import Munch
@@ -30,7 +30,7 @@ class Vanus:
     def __init__(self, auth_code: str):
         self.login = Login()
         self._session = aiohttp.ClientSession()
-        self._ws_task: Optional[asyncio.Task] = None
+        self._ws_task: asyncio.Task | None = None
         self._cache_path = str(Path.home() / ".pyokbot_cache.json")
         self.users_info_cache: dict = self.get_cache_and_update(self._cache_path)
         self._handled_msg_ids: set = set()
@@ -84,7 +84,8 @@ class Vanus:
                     continue
                 try:
                     original_message = self.messages.generate_message_object(msg)
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Failed to parse incoming message: {e}")
                     continue
                 if original_message is None:
                     continue
@@ -100,7 +101,8 @@ class Vanus:
                     _filter = handler.get("filters")
                     try:
                         filtered_message = self.message_filter(_filter, original_message)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"Filter error in handler {func}: {e}")
                         continue
                     if filtered_message is None:
                         continue
@@ -123,7 +125,7 @@ class Vanus:
         self,
         chat_id: str,
         message_text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
     ) -> None:
         """Send a text message to a chat.
 
@@ -138,7 +140,7 @@ class Vanus:
         self,
         message: dict,
         message_text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
         reply_to_repl: bool = False,
     ) -> None:
         """Reply to a message.
@@ -155,7 +157,7 @@ class Vanus:
         self,
         chat_id: str,
         voice_file_path: str,
-        repl_to_message: Optional[str] = None,
+        repl_to_message: str | None = None,
     ) -> None:
         """Send a voice message."""
         await self.messages.send_voice(self.ws, chat_id, voice_file_path, repl_to_message)
@@ -164,10 +166,10 @@ class Vanus:
         self,
         chat_id: str,
         photo_file_path: str,
-        caption: Optional[str] = None,
-        repl_to_message: Optional[str] = None,
-        parse_mode: Optional[str] = None,
-    ) -> Optional[dict]:
+        caption: str | None = None,
+        repl_to_message: str | None = None,
+        parse_mode: str | None = None,
+    ) -> dict | None:
         """Send a photo.
 
         Args:
@@ -184,9 +186,9 @@ class Vanus:
         self,
         chat_id: str,
         video_file_path: str,
-        caption: Optional[str] = None,
-        repl_to_message: Optional[str] = None,
-        parse_mode: Optional[str] = None,
+        caption: str | None = None,
+        repl_to_message: str | None = None,
+        parse_mode: str | None = None,
     ) -> None:
         """Send a video file."""
         await self.messages.send_video(
@@ -197,8 +199,8 @@ class Vanus:
         self,
         chat_id: str,
         file_path: str,
-        title: Optional[str] = None,
-        repl_to_message: Optional[str] = None,
+        title: str | None = None,
+        repl_to_message: str | None = None,
     ) -> None:
         """Send a file."""
         await self.messages.send_file(self.ws, chat_id, file_path, title, repl_to_message)
@@ -262,8 +264,8 @@ class Vanus:
     async def delete_member(
         self,
         chat_id: str,
-        member_ids: Optional[list] = None,
-        member_id: Optional[str] = None,
+        member_ids: list[str] | None = None,
+        member_id: str | None = None,
     ) -> None:
         """Remove a member from a chat."""
         await self.messages.delete_member(self.ws, chat_id, member_ids, member_id)
@@ -271,13 +273,13 @@ class Vanus:
     async def delete_message(
         self,
         chat_id: str,
-        message_ids: Optional[list] = None,
-        message_id: Optional[str] = None,
+        message_ids: list[str] | None = None,
+        message_id: str | None = None,
     ) -> None:
         """Delete a message."""
         await self.messages.delete_message(self.ws, chat_id, message_ids, message_id)
 
-    async def clear_chat_history(self, chat_id: str, for_all: Optional[bool] = None) -> None:
+    async def clear_chat_history(self, chat_id: str, for_all: bool | None = None) -> None:
         """Clear chat history.
 
         Args:
@@ -290,10 +292,12 @@ class Vanus:
         chat_id: str,
         message_id: str,
         message_text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
     ) -> None:
         """Edit a sent message."""
-        await self.messages.edit_message_text(self.ws, chat_id, message_id, message_text, parse_mode)
+        await self.messages.edit_message_text(
+            self.ws, chat_id, message_id, message_text, parse_mode
+        )
 
     async def pin_chat_message(self, chat_id: str, message_id: str) -> None:
         """Pin a message in a chat."""
@@ -347,19 +351,19 @@ class Vanus:
             try:
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(self.users_info_cache, f, ensure_ascii=False, indent=4)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to write cache: {e}")
         return {}
 
     # === FILTERS & HANDLERS ===
 
     @staticmethod
-    def parse_attaches_to_obj(attaches: Optional[dict]) -> dict:
+    def parse_attaches_to_obj(attaches: dict | None) -> dict:
         """Convert raw attachment data into structured dicts."""
         photo: list = []
         video: list = []
-        audio: Optional[dict] = None
-        document: Optional[dict] = None
+        audio: dict | None = None
+        document: dict | None = None
         if not attaches:
             return {}
         for attach in attaches:
@@ -410,7 +414,7 @@ class Vanus:
                 }
         return {"photo": photo, "video": video, "document": document, "audio": audio}
 
-    def message_filter(self, filter: dict, message: dict) -> Optional[Munch]:
+    def message_filter(self, filter: dict, message: dict) -> Munch | None:
         """Apply a handler filter to a message.
 
         Returns a Munch if the message matches, None otherwise.
@@ -431,17 +435,23 @@ class Vanus:
         if not content_ok:
             for ct in content_types:
                 if ct == "text" and message.get("text"):
-                    content_ok = True; break
+                    content_ok = True
+                    break
                 if ct == "commands" and message.get("text", "").startswith("/"):
-                    content_ok = True; break
+                    content_ok = True
+                    break
                 if ct == "video" and attaches.get("video"):
-                    content_ok = True; break
+                    content_ok = True
+                    break
                 if ct == "photo" and attaches.get("photo"):
-                    content_ok = True; break
+                    content_ok = True
+                    break
                 if ct == "audio" and attaches.get("audio") is not None:
-                    content_ok = True; break
+                    content_ok = True
+                    break
                 if ct == "document" and attaches.get("document") is not None:
-                    content_ok = True; break
+                    content_ok = True
+                    break
         if not from_bot_ok:
             if message.get("type") == str(f):
                 from_bot_ok = True
@@ -464,16 +474,17 @@ class Vanus:
     def on_message(
         self,
         filters: str = "user",
-        text: Optional[str | list] = None,
-        content_types: Optional[list] = None,
-        commands: Optional[list] = None,
+        text: str | list | None = None,
+        content_types: list | None = None,
+        commands: list | None = None,
     ) -> Callable:
         """Decorator to register a message handler.
 
         Args:
             filters: "user" or "bot". None means both.
             text: exact text to match, or list of strings.
-            content_types: list of content types ("photo", "video", "audio", "document", "text", "commands").
+            content_types: list of content types ("photo", "video", "audio",
+                "document", "text", "commands").
             commands: list of command names. "start" matches /start.
         """
         def decorator(func: Callable) -> Callable:

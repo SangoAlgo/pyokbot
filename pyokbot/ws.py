@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import websockets
 
@@ -49,11 +49,11 @@ class Ws:
         self.authorized = False
         self.authorized_event = asyncio.Event()
         self.socket_reconect_counter = 0
-        self.login_token: Optional[str] = None
+        self.login_token: str | None = None
         self.PING_INTERVAL = 30
         self.RECONNECT_DELAY = 5
 
-    async def wait_for_message(self, opcode: int, timeout: float = 30) -> Optional[dict]:
+    async def wait_for_message(self, opcode: int, timeout: float = 30) -> dict | None:
         """Wait for a message with a specific opcode. Returns None on timeout."""
         deadline = time.time() + timeout
         while True:
@@ -145,8 +145,8 @@ class Ws:
                                 last_ping = time.time()
                 except asyncio.CancelledError:
                     pass
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Ping loop error: {e}")
 
             async def activ_loop():
                 try:
@@ -160,8 +160,8 @@ class Ws:
                             })
                 except asyncio.CancelledError:
                     pass
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Activity loop error: {e}")
 
             ping_task = asyncio.create_task(ping_loop())
             activ_task = asyncio.create_task(activ_loop())
