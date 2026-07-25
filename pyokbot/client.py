@@ -36,6 +36,7 @@ class Vanus:
         self._handled_msg_ids: set = set()
         self.login.start_login(auth_code)
         self.ws = Ws(self.login)
+        self.bot_info: dict = {}
 
     # === LIFECYCLE ===
 
@@ -45,8 +46,8 @@ class Vanus:
             self.ws.start(self.login.AUTHCODE, self.login.okweb_token)
         )
         await self.ws.authorized_event.wait()
-        self.bot_info = await self.ws.get_bot_info()
-        self.bot_info = self.bot_info.get("profile")
+        profile = await self.ws.get_bot_info()
+        self.bot_info = profile.get("profile") or {}
         self.messages = Messages(self.bot_info, self._session)
 
     async def stop(self) -> None:
@@ -99,6 +100,8 @@ class Vanus:
                 for handler in self.ws.handles_list:
                     func = handler.get("func")
                     _filter = handler.get("filters")
+                    if func is None or _filter is None:
+                        continue
                     try:
                         filtered_message = self.message_filter(_filter, original_message)
                     except Exception as e:
@@ -215,7 +218,9 @@ class Vanus:
             "payload": {"chatIds": [chat_id]}
         }))
         response = await self.ws.wait_for_message(MessageOpcode.CHAT_INFO)
-        response = response.get("payload").get("chats")[0]
+        if response is None:
+            return {}
+        response = response.get("payload", {}).get("chats", [{}])[0]
         participants = response.get("participants") or {}
         last_msg = response.get("lastMessage") or {}
         attaches = self.parse_attaches_to_obj(last_msg.get("attaches"))
@@ -432,7 +437,7 @@ class Vanus:
         text_ok = text is None
         content_ok = content_types is None
         cmd_ok = commands is None
-        if not content_ok:
+        if not content_ok and content_types is not None:
             for ct in content_types:
                 if ct == "text" and message.get("text"):
                     content_ok = True
@@ -461,7 +466,7 @@ class Vanus:
                 text_ok = msg_text in text
             else:
                 text_ok = msg_text == text
-        if not cmd_ok:
+        if not cmd_ok and commands is not None:
             msg_text = message.get("text")
             if msg_text:
                 for cmd in commands:
@@ -470,6 +475,7 @@ class Vanus:
                         break
         if from_bot_ok and text_ok and content_ok and cmd_ok:
             return Munch.fromDict(message)
+        return None
 
     def on_message(
         self,

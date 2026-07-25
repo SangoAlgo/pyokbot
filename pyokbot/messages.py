@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import random
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from sulguk import transform_html
@@ -229,7 +229,8 @@ class Messages:
             result = await self.parse_html(message_text)
             message_text = result[1]
             parse_elements = result[0]
-        reply_id = message.reply.message.id if reply_to_repl else message["id"]
+        reply_id = (message.get("reply", {}).get("message", {}).get("id")
+                     if reply_to_repl else message["id"])
         chat_id = message["chat"]["id"]
         await ws._conn.send(json.dumps({
             "ver": 10,
@@ -306,7 +307,7 @@ class Messages:
                 ]
             }
         }))
-        pkt = {
+        pkt: dict[str, Any] = {
             "ver": 10, "cmd": 0, "seq": seq_base + 4,
             "opcode": MessageOpcode.SEND_MESSAGE,
             "payload": {
@@ -360,7 +361,7 @@ class Messages:
             raise APIError("Video upload: server returned an unexpected response") from e
         await self.upload_file(video_file_path, info["url"])
         cid = int(time.time() * 1000)
-        pkt = {
+        pkt: dict[str, Any] = {
             "ver": 10, "cmd": 0, "seq": seq_base + 3,
             "opcode": MessageOpcode.SEND_MESSAGE,
             "payload": {
@@ -408,7 +409,7 @@ class Messages:
         if publish is None:
             raise TimeoutError("File upload: server did not confirm publication")
         cid = int(time.time() * 1000)
-        pkt = {
+        pkt: dict[str, Any] = {
             "ver": 10, "cmd": 0, "seq": seq_base + 3,
             "opcode": MessageOpcode.SEND_MESSAGE,
             "payload": {
@@ -454,7 +455,7 @@ class Messages:
         if publish is None:
             raise TimeoutError("Voice upload: server did not confirm publication")
         cid = int(time.time() * 1000)
-        pkt = {
+        pkt: dict[str, Any] = {
             "ver": 10, "cmd": 0, "seq": seq_base + 3,
             "opcode": MessageOpcode.SEND_MESSAGE,
             "payload": {

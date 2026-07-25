@@ -42,10 +42,10 @@ class Ws:
             login: Login instance containing authentication tokens and configuration.
         """
         self.login = login
-        self.handles_list = []
+        self.handles_list: list[dict] = []
         self._msg_queue: asyncio.Queue = asyncio.Queue()
         self._rpc_queue: asyncio.Queue = asyncio.Queue()
-        self.bot_info = None
+        self.bot_info: dict | None = None
         self.authorized = False
         self.authorized_event = asyncio.Event()
         self.socket_reconect_counter = 0
@@ -109,7 +109,7 @@ class Ws:
                     break
         send_lock = asyncio.Lock()
 
-        async def send(ws: websockets.WebSocketClientProtocol, pkt: dict) -> None:
+        async def send(ws, pkt: dict) -> None:
             """Send a JSON packet with sequence number."""
             async with send_lock:
                 self.seq += 1
