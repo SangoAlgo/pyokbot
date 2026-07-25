@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://placehold.co/600x200/1a1a2e/e94560?text=pyokbot&font=montserrat" alt="pyokbot" width="600">
+  <img src="https://placehold.co/600x200/EE8208/FFFFFF?text=pyokbot&font=montserrat" alt="pyokbot" width="600">
 </p>
 
 <p align="center">
@@ -12,10 +12,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"></a>
   <a href="https://github.com/SangoAlgo/pyokbot/actions"><img src="https://img.shields.io/github/actions/workflow/status/SangoAlgo/pyokbot/ci.yml?style=flat-square&logo=github" alt="CI"></a>
   <a href="https://SangoAlgo.github.io/pyokbot"><img src="https://img.shields.io/badge/docs-mkdocs-1a73e8?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
-</p>
-
-<p align="center">
-  ⚠️ Alpha stage — works, expect rough edges
 </p>
 
 ---
