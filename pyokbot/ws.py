@@ -22,14 +22,19 @@ class Ws:
     Handles WebSocket lifecycle, authentication, and routing of incoming messages
     to registered handlers. Includes automatic reconnection with exponential backoff.
 
+    The connection is kept alive with OK.ru application-level JSON ping frames
+    (opcode 1 with "interactive": true) sent every PING_INTERVAL seconds.
+    RFC 6455 protocol-level ping/pong is disabled because the OK.ru server does
+    not answer protocol pings, which caused the socket to drop unexpectedly.
+
     Attributes:
         handles_list: List of registered message handlers.
         authorized: Whether the bot is currently authenticated.
         socket_reconect_counter: Number of reconnection attempts.
     """
 
-    PING_INTERVAL: int = 30
-    """Seconds between ping messages to keep connection alive."""
+    PING_INTERVAL: int = 5
+    """Seconds between OK.ru keepalive (opcode 1) frames."""
 
     RECONNECT_DELAY: int = 5
     """Base delay (seconds) for exponential backoff reconnection."""
@@ -50,7 +55,7 @@ class Ws:
         self.authorized_event = asyncio.Event()
         self.socket_reconect_counter = 0
         self.login_token: str | None = None
-        self.PING_INTERVAL = 30
+        self.PING_INTERVAL = 5
         self.RECONNECT_DELAY = 5
 
     async def wait_for_message(self, opcode: int, timeout: float = 30) -> dict | None:
@@ -109,14 +114,23 @@ class Ws:
                     break
         send_lock = asyncio.Lock()
 
-        async def send(ws, pkt: dict) -> None:
+        async def send(ws, pkt: dict, cmd: int = 0) -> None:
             """Send a JSON packet with sequence number."""
             async with send_lock:
                 self.seq += 1
+                pkt["ver"] = 10
+                pkt["cmd"] = cmd
                 pkt["seq"] = self.seq
                 await ws.send(
                     json.dumps(pkt, separators=(",", ":"), ensure_ascii=False)
                 )
+
+        async def ping(ws) -> None:
+            """Send an OK.ru keepalive frame (opcode 1, "interactive": true)."""
+            await send(ws, {
+                "opcode": MessageOpcode.PING,
+                "payload": {"interactive": True},
+            })
 
         async with websockets.connect(
             self.login.WS_URL,
@@ -125,46 +139,24 @@ class Ws:
                 "Origin": self.login.BASE_URL,
                 "User-Agent": self.login.UA,
             },
-            ping_interval=20,
-            ping_timeout=10,
+            ping_interval=None,
+            ping_timeout=None,
             close_timeout=5,
         ) as ws:
             self._conn = ws
-            last_ping = time.time()
+            await ping(ws)
 
-            async def ping_loop():
-                nonlocal last_ping
+            async def ping_loop(ws):
                 try:
                     while True:
-                        await asyncio.sleep(5)
-                        if self.authorized and self.login_token:
-                            if time.time() - last_ping >= self.PING_INTERVAL:
-                                ts = int(time.time() * 1000)
-                                async with send_lock:
-                                    await ws.send(f"PING {self.login_token} {ts}")
-                                last_ping = time.time()
+                        await asyncio.sleep(self.PING_INTERVAL)
+                        await ping(ws)
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
                     logger.debug(f"Ping loop error: {e}")
 
-            async def activ_loop():
-                try:
-                    while True:
-                        await asyncio.sleep(60)
-                        if self.authorized and self.login_token:
-                            await send(ws, {
-                                "ver": 10, "cmd": 0,
-                                "opcode": MessageOpcode.ACTIVITY,
-                                "payload": {"interactive": True}
-                            })
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    logger.debug(f"Activity loop error: {e}")
-
-            ping_task = asyncio.create_task(ping_loop())
-            activ_task = asyncio.create_task(activ_loop())
+            ping_task = asyncio.create_task(ping_loop(ws))
 
             try:
                 async for raw in ws:
@@ -173,17 +165,19 @@ class Ws:
                         msg = json.loads(text)
                     except json.JSONDecodeError:
                         continue
-                    await self._msg_queue.put(msg)
-                    await self._rpc_queue.put(msg)
                     op = msg.get("opcode")
                     p = msg.get("payload", {})
 
+                    if op == MessageOpcode.PING:
+                        continue
+
+                    await self._msg_queue.put(msg)
+                    await self._rpc_queue.put(msg)
+
                     if op == MessageOpcode.HELLO:
                         if self.login_token:
-                            ts = int(time.time() * 1000)
-                            await ws.send(f"PING {self.login_token} {ts}")
                             await send(ws, {
-                                "ver": 10, "cmd": 0, "opcode": MessageOpcode.AUTH,
+                                "opcode": MessageOpcode.AUTH,
                                 "payload": {
                                     "token": self.login_token,
                                     "chatsCount": 20,
@@ -197,7 +191,7 @@ class Ws:
                             })
                         else:
                             await send(ws, {
-                                "ver": 10, "cmd": 0, "opcode": MessageOpcode.TOKEN,
+                                "opcode": MessageOpcode.TOKEN,
                                 "payload": {
                                     "token": self.okweb_token,
                                     "tokenType": "OKWEB",
@@ -208,10 +202,8 @@ class Ws:
 
                     elif op == MessageOpcode.TOKEN:
                         self.login_token = p.get("token")
-                        ts = int(time.time() * 1000)
-                        await ws.send(f"PING {self.login_token} {ts}")
                         await send(ws, {
-                            "ver": 10, "cmd": 0, "opcode": MessageOpcode.AUTH,
+                            "opcode": MessageOpcode.AUTH,
                             "payload": {
                                 "token": self.login_token,
                                 "chatsCount": 20,
@@ -233,7 +225,23 @@ class Ws:
                         await self.on_authorized(p)
                         logger.info("WebSocket authorized successfully")
 
+                    elif op == MessageOpcode.INCOMING_MESSAGE:
+                        chat_id = p.get("chatId")
+                        message = p.get("message")
+                        if (
+                            isinstance(chat_id, int)
+                            and isinstance(message, dict)
+                            and message.get("id")
+                        ):
+                            await send(ws, {
+                                "opcode": MessageOpcode.INCOMING_MESSAGE,
+                                "payload": {
+                                    "chatId": chat_id,
+                                    "messageId": message["id"],
+                                    "chatType": "CHAT" if chat_id < 0 else "DIALOG",
+                                },
+                            }, cmd=1)
+
             finally:
                 ping_task.cancel()
-                activ_task.cancel()
-                await asyncio.gather(ping_task, activ_task, return_exceptions=True)
+                await asyncio.gather(ping_task, return_exceptions=True)

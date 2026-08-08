@@ -2,7 +2,8 @@ from enum import IntEnum
 
 
 class MessageOpcode(IntEnum):
-    ACTIVITY         = 1
+    PING             = 1
+    ACTIVITY         = 1  # alias of PING, kept for backward compatibility
     HELLO            = 6
     AUTH             = 19
     TOKEN            = 23
