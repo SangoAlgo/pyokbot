@@ -18,7 +18,7 @@ def test_inline_keyboard_builder():
     attach = kb.to_attach()
     assert attach["_type"] == "INLINE_KEYBOARD"
     assert attach["callbackId"] == "test_cb_123"
-    grid = attach["keyboard"]["buttons"]
+    grid = attach["buttons"]
     assert len(grid) == 2
     assert len(grid[0]) == 2
     assert grid[0][0]["text"] == "🔥 Тест 1"

@@ -102,9 +102,7 @@ class InlineKeyboard:
         ]
         attach: dict[str, Any] = {
             "_type": "INLINE_KEYBOARD",
-            "keyboard": {
-                "buttons": buttons_grid,
-            },
+            "buttons": buttons_grid,
         }
         if self.callback_id:
             attach["callbackId"] = self.callback_id
