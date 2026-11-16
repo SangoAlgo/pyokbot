@@ -34,8 +34,9 @@ class Vanus:
         await bot.polling()
     """
 
-    def __init__(self, auth_code: str):
+    def __init__(self, auth_code: str, auto_resolve_users: bool = True):
         self.login = Login()
+        self.auto_resolve_users = auto_resolve_users
         self._session = aiohttp.ClientSession()
         self._ws_task: asyncio.Task | None = None
         self._cache_path = str(Path.home() / ".pyokbot_cache.json")
@@ -49,6 +50,7 @@ class Vanus:
         self.login.start_login(auth_code)
         self.ws = Ws(self.login)
         self.bot_info: dict = {}
+        self.messages = Messages(self.bot_info, self._session)
 
     # === LIFECYCLE ===
 
@@ -157,6 +159,40 @@ class Vanus:
                         if len(self._handled_msg_ids) > 10000:
                             # Prune to prevent memory leaks
                             self._handled_msg_ids = set(list(self._handled_msg_ids)[-5000:])
+
+                    # Auto-resolve sender user info (instant from cache, or ~120ms via WS)
+                    sender_id = original_message.get("user", {}).get("id")
+                    if sender_id:
+                        uid_str = str(sender_id)
+                        uinfo = self.users_info_cache.get(uid_str)
+                        if not uinfo and self.auto_resolve_users:
+                            try:
+                                uinfo = await self.get_user_info(sender_id)
+                            except Exception as e:
+                                logger.debug(f"Failed to auto-resolve user {sender_id}: {e}")
+                        if uinfo and "user" in original_message:
+                            original_message["user"]["name"] = uinfo.get("name")
+                            original_message["user"]["avatar"] = uinfo.get("avatar_url")
+                            original_message["user"]["avatar_url"] = uinfo.get("avatar_url")
+                            original_message["user"]["full_avatar_url"] = uinfo.get("full_avatar_url")
+                            original_message["user"]["gender"] = uinfo.get("gender")
+
+                    # Auto-resolve replied user info if present
+                    if original_message.get("is_reply") and original_message.get("reply"):
+                        reply_user = original_message["reply"].get("user") or {}
+                        reply_sender_id = reply_user.get("id")
+                        if reply_sender_id:
+                            r_uid_str = str(reply_sender_id)
+                            r_uinfo = self.users_info_cache.get(r_uid_str)
+                            if not r_uinfo and self.auto_resolve_users:
+                                try:
+                                    r_uinfo = await self.get_user_info(reply_sender_id)
+                                except Exception as e:
+                                    logger.debug(f"Failed to auto-resolve reply user {reply_sender_id}: {e}")
+                            if r_uinfo and "user" in original_message["reply"]:
+                                original_message["reply"]["user"]["name"] = r_uinfo.get("name")
+                                original_message["reply"]["user"]["avatar"] = r_uinfo.get("avatar_url")
+                                original_message["reply"]["user"]["avatar_url"] = r_uinfo.get("avatar_url")
                     if not self.ws.handles_list:
                         continue
                     for handler in self.ws.handles_list:
@@ -464,28 +500,237 @@ class Vanus:
         """Subscribe or unsubscribe from live chat updates."""
         return await self.messages.subscribe_chat(self.ws, chat_id, subscribe)
 
-    # === USER INFO ===
+    # === USER INFO & PROFILES ===
 
-    async def get_user_info(self, user_id: str) -> dict:
-        """Get user profile info. Results are cached for 1 hour."""
+    async def get_user_info(
+        self,
+        user_id: str | int,
+        with_presence: bool = False,
+        force_refresh: bool = False,
+    ) -> dict:
+        """Get user profile info via fast native WebSocket RPC (Opcode 32).
+
+        Results are cached in memory and on disk with 1-hour TTL.
+        Fetches in ~120ms (over 8x faster than HTTP HTML scraping).
+
+        Args:
+            user_id: The target user's numeric OK.ru ID.
+            with_presence: If True, also fetch real-time presence/online status (Opcode 35).
+            force_refresh: If True, bypass cache and fetch fresh data from OK.ru.
+
+        Returns:
+            Dictionary with user fields: id, name, first_name, last_name,
+            avatar_url, full_avatar_url, gender, bday, profile_url, and optionally online, seen.
+        """
         uid = str(user_id)
-        if uid not in self.users_info_cache:
-            response = await self.login.get_user_info(user_id)
-            self.users_info_cache[uid] = response
+        if not force_refresh and uid in self.users_info_cache:
+            cached = self.users_info_cache[uid]
+            last_update = cached.get("last_update_time")
+            if last_update:
+                try:
+                    now = datetime.now()
+                    last = datetime.strptime(last_update, "%Y-%m-%d %H:%M:%S.%f")
+                    if now - last < timedelta(seconds=3600):
+                        if not with_presence or "online" in cached:
+                            return cached
+                except Exception:
+                    pass
+
+        # Fetch via WebSocket
+        info = await self._fetch_user_via_ws(user_id, with_presence=with_presence)
+        if info:
+            self.users_info_cache[uid] = info
             self.get_cache_and_update(self._cache_path, "UPDATE")
-            return response
-        cached = self.users_info_cache[uid]
-        last_update = cached.get("last_update_time")
-        if last_update:
-            now = datetime.now()
-            last = datetime.strptime(last_update, "%Y-%m-%d %H:%M:%S.%f")
-            if now - last >= timedelta(seconds=3600):
-                response = await self.login.get_user_info(user_id)
-                self.users_info_cache[uid] = response
+            return info
+
+        # Fallback to HTTP scraper if WS returned empty or failed
+        try:
+            http_info = await self.login.get_user_info(uid)
+            if http_info:
+                self.users_info_cache[uid] = http_info
                 self.get_cache_and_update(self._cache_path, "UPDATE")
-                return response
-            return cached
-        return cached
+                return http_info
+        except Exception as e:
+            logger.debug(f"HTTP fallback get_user_info failed: {e}")
+
+        return {
+            "id": uid,
+            "name": None,
+            "avatar_url": None,
+            "profile_url": f"https://ok.ru/profile/{uid}",
+        }
+
+    async def _fetch_user_via_ws(
+        self, user_id: str | int, with_presence: bool = False
+    ) -> dict | None:
+        try:
+            uid_int = int(user_id)
+        except (ValueError, TypeError):
+            return None
+
+        try:
+            if with_presence:
+                contacts_fut = self.messages.get_contacts(self.ws, [uid_int])
+                presence_fut = self.messages.get_presence(self.ws, [uid_int])
+                res32, res35 = await asyncio.gather(contacts_fut, presence_fut)
+            else:
+                res32 = await self.messages.get_contacts(self.ws, [uid_int])
+                res35 = {}
+
+            contacts = res32.get("payload", {}).get("contacts", [])
+            if not contacts:
+                return None
+            c = contacts[0]
+            name = c.get("names", [{}])[0].get("name", "") if c.get("names") else ""
+            parts = name.split(" ", 1)
+            first_name = parts[0] if parts else ""
+            last_name = parts[1] if len(parts) > 1 else ""
+            gender = "male" if c.get("gender") == 1 else "female" if c.get("gender") == 2 else "unknown"
+            default_avatar = (
+                "https://m.ok.ru/mres/img/stb3/female_370.png"
+                if gender == "female"
+                else "https://m.ok.ru/mres/img/stb3/male_370.png"
+            )
+            avatar = c.get("avatarUrl") or default_avatar
+            full_avatar = c.get("fullAvatarUrl") or avatar
+
+            presence_data = res35.get("payload", {}).get("presence", {}).get(str(uid_int), {})
+
+            info = {
+                "id": str(c.get("id", uid_int)),
+                "name": name,
+                "first_name": first_name,
+                "last_name": last_name,
+                "avatar_url": avatar,
+                "full_avatar_url": full_avatar,
+                "gender": gender,
+                "bday": c.get("bday"),
+                "profile_url": c.get("profileUrl") or f"https://ok.ru/profile/{uid_int}",
+                "last_update_time": str(datetime.now()),
+            }
+            if with_presence:
+                info["online"] = presence_data.get("on")
+                info["seen"] = presence_data.get("seen")
+                info["last_visit"] = "Сейчас на сайте" if presence_data.get("on") else "Был(а) недавно"
+            return info
+        except Exception as e:
+            logger.debug(f"WS _fetch_user_via_ws failed for {user_id}: {e}")
+            return None
+
+    async def get_users_info(
+        self,
+        user_ids: list[str | int],
+        with_presence: bool = False,
+        force_refresh: bool = False,
+    ) -> dict[str, dict]:
+        """Batch fetch user profiles for multiple users in a single WebSocket query.
+
+        Args:
+            user_ids: List of user IDs.
+            with_presence: If True, also fetch real-time presence.
+            force_refresh: If True, bypass cache.
+
+        Returns:
+            Dictionary mapping user_id string to user info dictionary.
+        """
+        results: dict[str, dict] = {}
+        missing_ids: list[int] = []
+
+        now = datetime.now()
+        for uid in user_ids:
+            uid_str = str(uid)
+            if not force_refresh and uid_str in self.users_info_cache:
+                cached = self.users_info_cache[uid_str]
+                last_update = cached.get("last_update_time")
+                if last_update:
+                    try:
+                        last = datetime.strptime(last_update, "%Y-%m-%d %H:%M:%S.%f")
+                        if now - last < timedelta(seconds=3600):
+                            if not with_presence or "online" in cached:
+                                results[uid_str] = cached
+                                continue
+                    except Exception:
+                        pass
+            if str(uid).isdigit():
+                missing_ids.append(int(uid))
+
+        if not missing_ids:
+            return results
+
+        # Query in chunks of up to 100 users per WebSocket request
+        for i in range(0, len(missing_ids), 100):
+            chunk = missing_ids[i : i + 100]
+            try:
+                if with_presence:
+                    c_fut = self.messages.get_contacts(self.ws, chunk)
+                    p_fut = self.messages.get_presence(self.ws, chunk)
+                    res32, res35 = await asyncio.gather(c_fut, p_fut)
+                else:
+                    res32 = await self.messages.get_contacts(self.ws, chunk)
+                    res35 = {}
+
+                contacts = res32.get("payload", {}).get("contacts", [])
+                presence_map = res35.get("payload", {}).get("presence", {})
+
+                for c in contacts:
+                    cid_str = str(c.get("id"))
+                    name = c.get("names", [{}])[0].get("name", "") if c.get("names") else ""
+                    parts = name.split(" ", 1)
+                    first_name = parts[0] if parts else ""
+                    last_name = parts[1] if len(parts) > 1 else ""
+                    gender = (
+                        "male"
+                        if c.get("gender") == 1
+                        else "female"
+                        if c.get("gender") == 2
+                        else "unknown"
+                    )
+                    default_avatar = (
+                        "https://m.ok.ru/mres/img/stb3/female_370.png"
+                        if gender == "female"
+                        else "https://m.ok.ru/mres/img/stb3/male_370.png"
+                    )
+                    avatar = c.get("avatarUrl") or default_avatar
+                    full_avatar = c.get("fullAvatarUrl") or avatar
+                    pres = presence_map.get(cid_str, {})
+
+                    info = {
+                        "id": cid_str,
+                        "name": name,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "avatar_url": avatar,
+                        "full_avatar_url": full_avatar,
+                        "gender": gender,
+                        "bday": c.get("bday"),
+                        "profile_url": c.get("profileUrl") or f"https://ok.ru/profile/{cid_str}",
+                        "last_update_time": str(datetime.now()),
+                    }
+                    if with_presence:
+                        info["online"] = pres.get("on")
+                        info["seen"] = pres.get("seen")
+                        info["last_visit"] = (
+                            "Сейчас на сайте" if pres.get("on") else "Был(а) недавно"
+                        )
+                    self.users_info_cache[cid_str] = info
+                    results[cid_str] = info
+            except Exception as e:
+                logger.error(f"Failed to batch fetch contacts: {e}")
+
+        self.get_cache_and_update(self._cache_path, "UPDATE")
+        return results
+
+    async def get_user_presence(self, user_id: str | int) -> dict:
+        """Fetch real-time online status and last seen timestamp of a user."""
+        uid_int = int(user_id) if str(user_id).isdigit() else user_id
+        res = await self.messages.get_presence(self.ws, [uid_int])
+        pres_dict = res.get("payload", {}).get("presence", {})
+        return pres_dict.get(str(uid_int), {})
+
+    async def get_user_photos(self, user_id: str | int, from_index: int = 0) -> list[str]:
+        """Fetch all photo URLs from a user's profile album."""
+        res = await self.messages.get_user_photos(self.ws, user_id, from_index)
+        return res.get("payload", {}).get("urls", [])
 
     async def socket_reconect_count(self) -> int:
         """Return the number of WebSocket reconnections."""

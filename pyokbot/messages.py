@@ -768,3 +768,43 @@ class Messages:
             MessageOpcode.SUBSCRIBE_CHAT,
             {"chatId": cid, "subscribe": subscribe},
         )
+
+    # === CONTACTS, PRESENCE & PROFILES ===
+
+    async def get_contacts(
+        self,
+        ws: Ws,
+        contact_ids: list[str | int],
+        contact_type: str = "USER",
+    ) -> dict:
+        """Fetch user contact/profile info for a list of user IDs via WebSocket (Opcode 32)."""
+        uids = [int(u) if str(u).isdigit() else u for u in contact_ids]
+        return await ws.request(
+            MessageOpcode.GET_CONTACTS,
+            {"contactIds": uids, "contactType": contact_type},
+        )
+
+    async def get_presence(
+        self,
+        ws: Ws,
+        contact_ids: list[str | int],
+    ) -> dict:
+        """Fetch real-time presence/online status for user IDs via WebSocket (Opcode 35)."""
+        uids = [int(u) if str(u).isdigit() else u for u in contact_ids]
+        return await ws.request(
+            MessageOpcode.GET_PRESENCE,
+            {"contactIds": uids},
+        )
+
+    async def get_user_photos(
+        self,
+        ws: Ws,
+        user_id: str | int,
+        from_index: int = 0,
+    ) -> dict:
+        """Fetch all photo URLs for a user via WebSocket (Opcode 39)."""
+        uid = int(user_id) if str(user_id).isdigit() else user_id
+        return await ws.request(
+            MessageOpcode.GET_USER_PHOTOS,
+            {"contactId": uid, "from": from_index},
+        )

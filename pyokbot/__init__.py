@@ -18,7 +18,7 @@ from .errors import (
 from .logging_config import logger
 from .opcodes import MessageOpcode
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __all__ = [
     "Vanus",
     "MessageOpcode",

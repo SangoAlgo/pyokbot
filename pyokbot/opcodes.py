@@ -11,9 +11,13 @@ class MessageOpcode(IntEnum):
     TOKEN              = 23
     STICKER_SYNC       = 27
     STICKER_SET        = 28
+    GET_CONTACTS       = 32
     CONTACT_INFO       = 32
+    UPDATE_CONTACT     = 34
+    GET_PRESENCE       = 35
     PRESENCE           = 35
     BLOCK_CONTACT      = 36
+    GET_USER_PHOTOS    = 39
     CHAT_INFO          = 48
     CHAT_HISTORY       = 49
     READ_MESSAGE       = 50
@@ -42,6 +46,7 @@ class MessageOpcode(IntEnum):
     INCOMING_MESSAGE   = 128
     USER_TYPING        = 129
     READ_RECEIPT       = 130
+    CONTACT_UPDATE     = 131
     PRESENCE_UPDATE    = 132
     FILE_PUBLISHED     = 136
     INCOMING_REACTION  = 155

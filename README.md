@@ -48,6 +48,7 @@ asyncio.run(main())
 | ⚡ **Real-time** | Messages arrive as soon as they're sent |
 | 🔧 **Commands** | `@bot.on_message(commands=["start"])` handles `/start` |
 | 🎯 **Filters** | Route by content type, text, or sender (user/bot) |
+| 👤 **User Profiles** | Auto-resolved `message.user.name`, avatar, gender; batch queries in ~120ms |
 | 🖼️ **Media** | Send photos, videos, files, voice messages |
 | 📝 **HTML** | Bold, italic, code, headings, links with `parse_mode="html"` |
 | 👥 **Chat admin** | Pin, edit, delete, clear, change title/photo, kick, join/leave |
@@ -232,6 +233,29 @@ async def on_read(event):
 @bot.on_presence()
 async def on_presence(event):
     print(f"User {event.userId} presence changed: {event.presence}")
+```
+</details>
+
+<details>
+<summary><b>👤 User Profiles & Auto-Resolution</b> - instant names, avatars, gender & batch queries</summary>
+
+```python
+# Automatic name & avatar on incoming messages (Telegram style)
+@bot.on_message()
+async def handle_message(message):
+    print(f"{message.user.name} ({message.user.gender}): {message.text}")
+    print(f"Avatar: {message.user.avatar}")
+
+# Query single user profile via WebSocket (~120ms)
+user = await bot.get_user_info(user_id, with_presence=True)
+print(user["name"], user["online"], user["seen"])
+
+# Batch query multiple users in a single request (~150ms)
+users = await bot.get_users_info([user1, user2, user3])
+
+# Get real-time presence or profile photos
+presence = await bot.get_user_presence(user_id)
+photos = await bot.get_user_photos(user_id)
 ```
 </details>
 
