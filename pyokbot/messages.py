@@ -95,61 +95,69 @@ class Messages:
                     parsed[i]["type"] = parsed_orig[i]["type"]
         return [parsed, result.text]
 
+    @staticmethod
+    def _clean_chat_id(chat_id: str | int) -> int | str:
+        """Convert string chat IDs to int if numeric (including negative IDs for group chats)."""
+        if isinstance(chat_id, str):
+            if chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit()):
+                return int(chat_id)
+        return chat_id
+
     def generate_message_object(self, message: dict) -> dict | None:
         if not (message.get("opcode") == MessageOpcode.INCOMING_MESSAGE
                 and isinstance(message.get("payload"), dict)
                 and isinstance(message["payload"].get("message"), dict)
                 and message["payload"]["message"].get("sender") is not None):
             return None
-        if message.get("ver") == 10:
-            payload = message["payload"]
-            msg = payload["message"]
-            sender = msg["sender"]
-            user_type = "bot" if sender == self.bot_info.get("id") else "user"
-            link = msg.get("link")
-            is_reply = isinstance(link, dict) and isinstance(link.get("message"), dict)
-            full_reply = None
-            if is_reply:
-                link_msg = link["message"]
-                full_reply = {
-                    "text": link_msg.get("text"),
-                    "message": {
-                        "id": link_msg.get("id"),
-                        "time": link_msg.get("time"),
-                        "cid": link_msg.get("cid"),
-                    },
-                    "user": {
-                        "id": link_msg.get("sender"),
-                        "name": None,
-                        "url": f'https://m.ok.ru/profile/{link_msg.get("sender")}',
-                    },
-                    "attaches": link_msg.get("attaches"),
-                }
-            full_dict = {
-                "type": user_type,
-                "text": msg.get("text"),
-                "is_reply": is_reply,
-                "id": msg.get("id"),
+        if message.get("ver") is not None and message.get("ver") < 10:
+            return None
+        payload = message["payload"]
+        msg = payload["message"]
+        sender = msg["sender"]
+        user_type = "bot" if sender == self.bot_info.get("id") else "user"
+        link = msg.get("link")
+        is_reply = isinstance(link, dict) and isinstance(link.get("message"), dict)
+        full_reply = None
+        if is_reply:
+            link_msg = link["message"]
+            full_reply = {
+                "text": link_msg.get("text"),
                 "message": {
-                    "prevMessageId": payload.get("prevMessageId"),
-                    "time": msg.get("time"),
-                    "ttl": payload.get("ttl"),
-                    "cid": msg.get("cid"),
+                    "id": link_msg.get("id"),
+                    "time": link_msg.get("time"),
+                    "cid": link_msg.get("cid"),
                 },
                 "user": {
-                    "id": sender,
+                    "id": link_msg.get("sender"),
                     "name": None,
-                    "avatar": None,
-                    "url": f'https://m.ok.ru/profile/{sender}',
+                    "url": f'https://m.ok.ru/profile/{link_msg.get("sender")}',
                 },
-                "chat": {
-                    "id": payload.get("chatId"),
-                },
-                "reply": full_reply,
-                "attaches": msg.get("attaches"),
+                "attaches": link_msg.get("attaches"),
             }
-            return full_dict
-        return None
+        full_dict = {
+            "type": user_type,
+            "text": msg.get("text"),
+            "is_reply": is_reply,
+            "id": msg.get("id"),
+            "message": {
+                "prevMessageId": payload.get("prevMessageId"),
+                "time": msg.get("time"),
+                "ttl": payload.get("ttl"),
+                "cid": msg.get("cid"),
+            },
+            "user": {
+                "id": sender,
+                "name": None,
+                "avatar": None,
+                "url": f'https://m.ok.ru/profile/{sender}',
+            },
+            "chat": {
+                "id": payload.get("chatId"),
+            },
+            "reply": full_reply,
+            "attaches": msg.get("attaches"),
+        }
+        return full_dict
 
     async def upload_file(
         self,
@@ -221,39 +229,40 @@ class Messages:
         message_text: str,
         parse_mode: str | None = None,
         reply_to_repl: bool = False,
-    ) -> None:
+    ) -> int:
         parse_elements: list = []
         if parse_mode == "html":
             result = await self.parse_html(message_text)
             message_text = result[1]
             parse_elements = result[0]
-        reply_id = (message.get("reply", {}).get("message", {}).get("id")
-                     if reply_to_repl else message["id"])
-        chat_id = message["chat"]["id"]
-        await ws._conn.send(json.dumps({
-            "ver": 10,
-            "cmd": 0,
-            "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
+        reply_id = (
+            message.get("reply", {}).get("message", {}).get("id")
+            if reply_to_repl
+            else message.get("id")
+        )
+        chat_id = message.get("chat", {}).get("id")
+        cid = self._clean_chat_id(chat_id)
+        return await ws.send_packet(
+            MessageOpcode.SEND_MESSAGE,
+            {
                 "notify": True,
                 "type": "USER",
                 "attachMEL": True,
-                "chatId": chat_id,
+                "chatId": cid,
                 "message": {
                     "cid": int(time.time() * 1000),
                     "text": message_text,
                     "detectShare": False,
                     "elements": parse_elements,
-                    "link": {"type": "REPLY", "messageId": reply_id},
-                }
-            }
-        }))
+                    "link": {"type": "REPLY", "messageId": str(reply_id)},
+                },
+            },
+        )
 
     async def send_photo(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         photo_file_path: str,
         caption: str | None = None,
         repl_to_message: str | None = None,
@@ -265,17 +274,13 @@ class Messages:
                 result = await self.parse_html(caption)
                 caption = result[1]
                 parse_elements = result[0]
-        seq_base = random.randint(0, 9999)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 1,
-            "opcode": MessageOpcode.REQUEST_UPLOAD,
-            "payload": {"chatId": chat_id, "type": "PHOTO"}
-        }))
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 2,
-            "opcode": MessageOpcode.PHOTO_UPLOAD,
-            "payload": {"count": 1, "profile": False}
-        }))
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.REQUEST_UPLOAD, {"chatId": cid, "type": "PHOTO"}
+        )
+        await ws.send_packet(
+            MessageOpcode.PHOTO_UPLOAD, {"count": 1, "profile": False}
+        )
         msg = await ws.wait_for_message(MessageOpcode.PHOTO_UPLOAD, timeout=15)
         if msg is None:
             raise TimeoutError("Photo upload URL: server did not respond in time")
@@ -295,31 +300,32 @@ class Messages:
         token = next(iter(photos.values())).get("token")
         if not token:
             raise UploadError("Photo upload finished but no token was returned")
-        cid = int(time.time() * 1000)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 3, "opcode": 5,
-            "payload": {
+        now_cid = int(time.time() * 1000)
+        await ws.send_packet(
+            MessageOpcode.TELEMETRY,
+            {
                 "events": [
-                    {"type": "ACTION", "event": "ATTACH_PHOTO", "params": {}, "time": cid},
-                    {"type": "ACTION", "event": "ATTACH_PHOTO", "params": {}, "time": cid + 100}
+                    {"type": "ACTION", "event": "ATTACH_PHOTO", "params": {}, "time": now_cid},
+                    {"type": "ACTION", "event": "ATTACH_PHOTO", "params": {}, "time": now_cid + 100},
                 ]
-            }
-        }))
+            },
+        )
         pkt: dict[str, Any] = {
-            "ver": 10, "cmd": 0, "seq": seq_base + 4,
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
-                "notify": True, "type": "USER", "attachMEL": True, "chatId": chat_id,
-                "message": {
-                    "cid": cid, "text": caption or "", "detectShare": False,
-                    "elements": parse_elements,
-                    "attaches": [{"_type": "PHOTO", "photoToken": token}]
-                }
-            }
+            "notify": True,
+            "type": "USER",
+            "attachMEL": True,
+            "chatId": cid,
+            "message": {
+                "cid": now_cid,
+                "text": caption or "",
+                "detectShare": False,
+                "elements": parse_elements,
+                "attaches": [{"_type": "PHOTO", "photoToken": token}],
+            },
         }
         if repl_to_message is not None:
-            pkt["payload"]["message"]["link"] = {"type": "REPLY", "messageId": repl_to_message}
-        await ws._conn.send(json.dumps(pkt))
+            pkt["message"]["link"] = {"type": "REPLY", "messageId": str(repl_to_message)}
+        await ws.send_packet(MessageOpcode.SEND_MESSAGE, pkt)
         confirmation = await ws.wait_for_message(MessageOpcode.SEND_MESSAGE, timeout=15)
         if confirmation is None:
             raise TimeoutError("Photo send: no confirmation from server")
@@ -328,7 +334,7 @@ class Messages:
     async def send_video(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         video_file_path: str,
         caption: str | None = None,
         repl_to_message: str | None = None,
@@ -339,17 +345,13 @@ class Messages:
             result = await self.parse_html(caption)
             caption = result[1]
             parse_elements = result[0]
-        seq_base = random.randint(0, 9999)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 1,
-            "opcode": MessageOpcode.REQUEST_UPLOAD,
-            "payload": {"chatId": chat_id, "type": "VIDEO"}
-        }))
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 2,
-            "opcode": MessageOpcode.MEDIA_UPLOAD,
-            "payload": {"count": 1, "audio": False}
-        }))
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.REQUEST_UPLOAD, {"chatId": cid, "type": "VIDEO"}
+        )
+        await ws.send_packet(
+            MessageOpcode.MEDIA_UPLOAD, {"count": 1, "audio": False}
+        )
         msg = await ws.wait_for_message(MessageOpcode.MEDIA_UPLOAD)
         if msg is None:
             raise TimeoutError("Video upload URL: server did not respond in time")
@@ -358,43 +360,40 @@ class Messages:
         except (KeyError, IndexError, TypeError) as e:
             raise APIError("Video upload: server returned an unexpected response") from e
         await self.upload_file(video_file_path, info["url"])
-        cid = int(time.time() * 1000)
+        now_cid = int(time.time() * 1000)
         pkt: dict[str, Any] = {
-            "ver": 10, "cmd": 0, "seq": seq_base + 3,
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
-                "notify": True, "type": "USER", "attachMEL": True, "chatId": chat_id,
-                "message": {
-                    "cid": cid, "text": caption or "", "detectsShare": False,
-                    "elements": parse_elements,
-                    "attaches": [{"_type": "VIDEO", "token": info["token"]}]
-                }
-            }
+            "notify": True,
+            "type": "USER",
+            "attachMEL": True,
+            "chatId": cid,
+            "message": {
+                "cid": now_cid,
+                "text": caption or "",
+                "detectsShare": False,
+                "elements": parse_elements,
+                "attaches": [{"_type": "VIDEO", "token": info["token"]}],
+            },
         }
         if repl_to_message is not None:
-            pkt["payload"]["message"]["link"] = {"type": "REPLY", "messageId": repl_to_message}
-        await ws._conn.send(json.dumps(pkt))
+            pkt["message"]["link"] = {"type": "REPLY", "messageId": str(repl_to_message)}
+        await ws.send_packet(MessageOpcode.SEND_MESSAGE, pkt)
         return True
 
     async def send_file(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         file_path: str,
         title: str | None = None,
         repl_to_message: str | None = None,
     ) -> bool:
-        seq_base = random.randint(0, 9999)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 1,
-            "opcode": MessageOpcode.REQUEST_UPLOAD,
-            "payload": {"chatId": chat_id, "type": "FILE"}
-        }))
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 2,
-            "opcode": MessageOpcode.FILE_UPLOAD,
-            "payload": {"count": 1}
-        }))
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.REQUEST_UPLOAD, {"chatId": cid, "type": "FILE"}
+        )
+        await ws.send_packet(
+            MessageOpcode.FILE_UPLOAD, {"count": 1}
+        )
         msg = await ws.wait_for_message(MessageOpcode.FILE_UPLOAD)
         if msg is None:
             raise TimeoutError("File upload URL: server did not respond in time")
@@ -406,41 +405,39 @@ class Messages:
         publish = await ws.wait_for_message(MessageOpcode.FILE_PUBLISHED)
         if publish is None:
             raise TimeoutError("File upload: server did not confirm publication")
-        cid = int(time.time() * 1000)
+        now_cid = int(time.time() * 1000)
         pkt: dict[str, Any] = {
-            "ver": 10, "cmd": 0, "seq": seq_base + 3,
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
-                "notify": True, "type": "USER", "attachMEL": True, "chatId": chat_id,
-                "message": {
-                    "cid": cid, "text": "", "detectsShare": False,
-                    "elements": [], "attaches": [{"_type": "FILE", "token": info["token"]}]
-                }
-            }
+            "notify": True,
+            "type": "USER",
+            "attachMEL": True,
+            "chatId": cid,
+            "message": {
+                "cid": now_cid,
+                "text": "",
+                "detectsShare": False,
+                "elements": [],
+                "attaches": [{"_type": "FILE", "token": info["token"]}],
+            },
         }
         if repl_to_message is not None:
-            pkt["payload"]["message"]["link"] = {"type": "REPLY", "messageId": repl_to_message}
-        await ws._conn.send(json.dumps(pkt))
+            pkt["message"]["link"] = {"type": "REPLY", "messageId": str(repl_to_message)}
+        await ws.send_packet(MessageOpcode.SEND_MESSAGE, pkt)
         return True
 
     async def send_voice(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         voice_file_path: str,
         repl_to_message: str | None = None,
     ) -> bool:
-        seq_base = random.randint(0, 9999)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 1,
-            "opcode": MessageOpcode.REQUEST_UPLOAD,
-            "payload": {"chatId": chat_id, "type": "AUDIO"}
-        }))
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 2,
-            "opcode": MessageOpcode.MEDIA_UPLOAD,
-            "payload": {"count": 1, "audio": True}
-        }))
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.REQUEST_UPLOAD, {"chatId": cid, "type": "AUDIO"}
+        )
+        await ws.send_packet(
+            MessageOpcode.MEDIA_UPLOAD, {"count": 1, "audio": True}
+        )
         msg = await ws.wait_for_message(MessageOpcode.MEDIA_UPLOAD)
         if msg is None:
             raise TimeoutError("Voice upload URL: server did not respond in time")
@@ -452,29 +449,27 @@ class Messages:
         publish = await ws.wait_for_message(MessageOpcode.FILE_PUBLISHED)
         if publish is None:
             raise TimeoutError("Voice upload: server did not confirm publication")
-        cid = int(time.time() * 1000)
+        now_cid = int(time.time() * 1000)
         pkt: dict[str, Any] = {
-            "ver": 10, "cmd": 0, "seq": seq_base + 3,
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
-                "notify": True, "type": "USER", "chatId": chat_id,
-                "message": {
-                    "cid": cid, "text": "",
-                    "attaches": [{"_type": "AUDIO", "token": info["token"]}]
-                }
-            }
+            "notify": True,
+            "type": "USER",
+            "chatId": cid,
+            "message": {
+                "cid": now_cid,
+                "text": "",
+                "attaches": [{"_type": "AUDIO", "token": info["token"]}],
+            },
         }
         if repl_to_message is not None:
-            pkt["payload"]["message"]["link"] = {"type": "REPLY", "messageId": repl_to_message}
-        await ws._conn.send(json.dumps(pkt))
+            pkt["message"]["link"] = {"type": "REPLY", "messageId": str(repl_to_message)}
+        await ws.send_packet(MessageOpcode.SEND_MESSAGE, pkt)
         return True
 
-    async def writing_emulation(self, ws: Ws, chat_id: str) -> bool:
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.REQUEST_UPLOAD,
-            "payload": {"chatId": chat_id, "type": "TEXT"}
-        }))
+    async def writing_emulation(self, ws: Ws, chat_id: str | int) -> bool:
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.REQUEST_UPLOAD, {"chatId": cid, "type": "TEXT"}
+        )
         return True
 
     async def edit_message_text(
@@ -490,7 +485,7 @@ class Messages:
             result = await self.parse_html(message_text)
             message_text = result[1]
             parse_elements = result[0]
-        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        cid = self._clean_chat_id(chat_id)
         await ws.request(
             MessageOpcode.EDIT_MESSAGE,
             {
@@ -503,33 +498,26 @@ class Messages:
         )
         return True
 
-    async def pin_chat_message(self, ws: Ws, chat_id: str, message_id: str) -> bool:
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.CHAT_SETTINGS,
-            "payload": {
-                "chatId": chat_id,
-                "pinMessageId": message_id,
-                "notifyPin": False
-            }
-        }))
+    async def pin_chat_message(self, ws: Ws, chat_id: str | int, message_id: str) -> bool:
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.CHAT_SETTINGS,
+            {"chatId": cid, "pinMessageId": str(message_id), "notifyPin": False},
+        )
         return True
 
-    async def change_chat_title(self, ws: Ws, chat_id: str, title: str) -> bool:
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.CHAT_SETTINGS,
-            "payload": {"chatId": chat_id, "theme": title}
-        }))
+    async def change_chat_title(self, ws: Ws, chat_id: str | int, title: str) -> bool:
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.CHAT_SETTINGS, {"chatId": cid, "theme": title}
+        )
         return True
 
-    async def change_chat_photo(self, ws: Ws, chat_id: str, photo_file_path: str) -> bool:
-        seq_base = random.randint(0, 9999)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 2,
-            "opcode": MessageOpcode.PHOTO_UPLOAD,
-            "payload": {"count": 1, "profile": False}
-        }))
+    async def change_chat_photo(self, ws: Ws, chat_id: str | int, photo_file_path: str) -> bool:
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.PHOTO_UPLOAD, {"count": 1, "profile": False}
+        )
         msg = await ws.wait_for_message(MessageOpcode.PHOTO_UPLOAD)
         if msg is None:
             raise TimeoutError("Chat photo upload: server did not respond in time")
@@ -544,70 +532,75 @@ class Messages:
         token = next(iter(response.values())).get("token") if response else None
         if not token:
             raise UploadError("Chat photo upload: no token in response")
-        cid = int(time.time() * 1000)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 3,
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
-                "chatId": chat_id,
+        now_cid = int(time.time() * 1000)
+        await ws.send_packet(
+            MessageOpcode.SEND_MESSAGE,
+            {
+                "chatId": cid,
                 "message": {
-                    "cid": cid,
-                    "attaches": [{"_type": "CONTROL", "event": "icon", "photoToken": token}]
-                }
-            }
-        }))
+                    "cid": now_cid,
+                    "attaches": [{"_type": "CONTROL", "event": "icon", "photoToken": token}],
+                },
+            },
+        )
         return True
 
     async def delete_member(
         self,
         ws: Ws,
-        chat_id: str,
-        member_ids: list[str] | None = None,
-        member_id: str | None = None,
+        chat_id: str | int,
+        member_ids: list[str | int] | None = None,
+        member_id: str | int | None = None,
     ) -> bool:
-        ids = member_ids if member_ids is not None else [member_id]
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.BLOCK_MEMBER,
-            "payload": {
-                "operation": "add", "showHistory": True, "chatId": chat_id,
-                "userIds": ids, "type": "BLOCKED_MEMBER", "cleanMsgPeriod": 0
-            }
-        }))
+        cid = self._clean_chat_id(chat_id)
+        raw_ids = member_ids if member_ids is not None else [member_id]
+        ids = [int(i) if str(i).isdigit() else i for i in raw_ids if i is not None]
+        await ws.send_packet(
+            MessageOpcode.BLOCK_MEMBER,
+            {
+                "operation": "add",
+                "showHistory": True,
+                "chatId": cid,
+                "userIds": ids,
+                "type": "BLOCKED_MEMBER",
+                "cleanMsgPeriod": 0,
+            },
+        )
         return True
 
     async def delete_message(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         message_ids: list[str] | None = None,
         message_id: str | None = None,
     ) -> bool:
-        ids = message_ids if message_ids is not None else [str(message_id)]
-        ids = [str(i) for i in ids]
-        seq_base = random.randint(0, 9999)
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": seq_base + 1,
-            "opcode": MessageOpcode.DELETE_MESSAGE,
-            "payload": {"chatId": chat_id, "messageIds": ids, "complaint": None, "forMe": False}
-        }))
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 1, "seq": seq_base + 1,
-            "opcode": MessageOpcode.DELETE_MESSAGE,
-            "payload": {"chatId": chat_id, "messageIds": ids}
-        }))
+        cid = self._clean_chat_id(chat_id)
+        raw_ids = message_ids if message_ids is not None else [str(message_id)]
+        ids = [str(i) for i in raw_ids if i is not None]
+        await ws.send_packet(
+            MessageOpcode.DELETE_MESSAGE,
+            {"chatId": cid, "messageIds": ids, "complaint": None, "forMe": False},
+        )
+        await ws.send_packet(
+            MessageOpcode.DELETE_MESSAGE,
+            {"chatId": cid, "messageIds": ids},
+            cmd=1,
+        )
         return True
 
-    async def clear_chat_history(self, ws: Ws, chat_id: str, for_all: bool | None = None) -> bool:
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.CLEAR_HISTORY,
-            "payload": {
-                "chatId": chat_id,
+    async def clear_chat_history(
+        self, ws: Ws, chat_id: str | int, for_all: bool | None = None
+    ) -> bool:
+        cid = self._clean_chat_id(chat_id)
+        await ws.send_packet(
+            MessageOpcode.CLEAR_HISTORY,
+            {
+                "chatId": cid,
                 "lastEventTime": int(time.time() * 1000),
-                "forAll": for_all
-            }
-        }))
+                "forAll": for_all,
+            },
+        )
         return True
 
     # === REACTIONS ===

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.1] - 2026-11-16
+
+### Fixed
+- **Silent Send Failures in Group Chats**:
+  - Group chats in OK.ru have negative IDs (e.g. `-110881438411737`). Passing string chat IDs caused OK.ru backend to interpret them as user IDs and reject packets with `not.found User`.
+  - Added `Messages._clean_chat_id` which automatically converts string numeric and negative chat IDs into integer representations across `send_reply`, `send_photo`, `send_video`, `send_file`, `send_voice`, `writing_emulation`, `pin_chat_message`, `change_chat_title`, `change_chat_photo`, `delete_member`, `delete_message`, and `clear_chat_history`.
+- **WebSocket Send Concurrency & Ordering**:
+  - Replaced ad-hoc `ws._conn.send(...)` with randomized `seq` numbers by thread-safe `ws.send_packet(...)` with sequential sequence numbers and `_send_lock`. Prevents dropped packets caused by sequence gaps or simultaneous writes.
+- **Missed Incoming Messages (`generate_message_object`)**:
+  - Fixed rigid `ver == 10` filter that silently dropped packets lacking an explicit `ver: 10` property. Now supports all modern versions while filtering out obsolete v9.
+
 ## [1.3.0] - 2026-11-16
 
 ### Added

@@ -191,3 +191,22 @@ def test_vanus_event_decorators(sample_vanus):
     assert read_handler in sample_vanus.read_handlers
     assert presence_handler in sample_vanus.presence_handlers
     assert raw_event_handler in sample_vanus.event_handlers[MessageOpcode.CHATS_LIST]
+
+
+@pytest.mark.asyncio
+async def test_send_reply_cleans_group_chat_id(mock_ws):
+    messages = Messages({}, None)
+    fake_message = {
+        "id": "msg_42",
+        "chat": {"id": "-110881438411737"},
+    }
+    await messages.send_reply(mock_ws, fake_message, "Replying to group message")
+
+    assert len(mock_ws._conn.sent) == 1
+    sent_pkt = json.loads(mock_ws._conn.sent[0])
+    assert sent_pkt["opcode"] == MessageOpcode.SEND_MESSAGE
+    # Crucial check: chatId must be converted to int, NOT left as string
+    assert sent_pkt["payload"]["chatId"] == -110881438411737
+    assert isinstance(sent_pkt["payload"]["chatId"], int)
+    assert sent_pkt["payload"]["message"]["link"]["messageId"] == "msg_42"
+    assert sent_pkt["seq"] == 1
