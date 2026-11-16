@@ -1057,3 +1057,39 @@ class Vanus:
             interval=interval,
             auto_retry=auto_retry,
         )
+
+    # === INTERACTIVE KEYBOARDS & BOT COMMANDS ===
+
+    async def click_inline_button(
+        self,
+        callback_id: str,
+        payload: str,
+        button_type: str = "CALLBACK",
+        timeout: float = 5.0,
+    ) -> dict:
+        """Click an inline keyboard button (Opcode 118)."""
+        return await self.messages.click_inline_button(
+            self.ws,
+            callback_id=callback_id,
+            payload=payload,
+            button_type=button_type,
+            timeout=timeout,
+        )
+
+    async def send_inline_keyboard(
+        self,
+        chat_id: str | int,
+        text: str,
+        keyboard: Any,
+        parse_mode: str | None = None,
+        group_token: str | None = None,
+    ) -> dict:
+        """Send a message with an inline keyboard."""
+        return await self.messages.send_inline_keyboard(
+            self.ws,
+            chat_id=chat_id,
+            message_text=text,
+            keyboard=keyboard,
+            parse_mode=parse_mode,
+            group_token=group_token,
+        )

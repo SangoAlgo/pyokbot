@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0] - 2026-11-16
+
+### Added
+- **Interactive Keyboards & Inline Buttons Support**:
+  - `InlineKeyboard` & `InlineButton`: Fluent builder for inline keyboards with `CALLBACK`, `LINK`, `REQUEST_CONTACT`, and `REQUEST_GEO_LOCATION` button types, supporting `DEFAULT`, `POSITIVE`, and `NEGATIVE` color intents.
+  - `ReplyKeyboard` & `ReplyButton`: Builder for bottom input field replacement keyboards with optional `defaultInputDisabled`.
+  - Exported in top-level `pyokbot` package namespace.
+- **Opcode 118 (CALLBACK_ANSWER / sendBotCommand)**:
+  - Added `bot.click_inline_button(callback_id, payload, button_type="CALLBACK")` allowing userbots to programmatically click inline buttons on external bots in OK.ru.
+- **Automatic Keyboard Extraction**:
+  - `generate_message_object` now automatically parses `INLINE_KEYBOARD` and `REPLY_KEYBOARD` attaches into structured `message.inline_keyboard`, `message.reply_keyboard`, and `message.buttons`.
+- **Hybrid Inline Keyboard Dispatch**:
+  - `bot.send_inline_keyboard(chat_id, text, keyboard, group_token=...)` supporting both official Bot API gateway (for real native button dispatch from groups) and direct WebSocket attaches.
+- **Test Suite**:
+  - Added `tests/test_keyboards.py` with 5 new tests, bringing total test count to 93 (100% passing).
+
 ## [1.3.1] - 2026-11-16
 
 ### Fixed

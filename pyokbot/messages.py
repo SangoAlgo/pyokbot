@@ -134,6 +134,24 @@ class Messages:
                 },
                 "attaches": link_msg.get("attaches"),
             }
+        # Extract keyboards if present
+        inline_keyboard = None
+        reply_keyboard = None
+        raw_attaches = msg.get("attaches") or []
+        for att in raw_attaches:
+            if isinstance(att, dict):
+                atype = att.get("_type")
+                if atype == "INLINE_KEYBOARD":
+                    inline_keyboard = {
+                        "callbackId": att.get("callbackId"),
+                        "buttons": att.get("keyboard", {}).get("buttons", []),
+                    }
+                elif atype == "REPLY_KEYBOARD":
+                    reply_keyboard = {
+                        "buttons": att.get("keyboard", []),
+                        "defaultInputDisabled": att.get("defaultInputDisabled", False),
+                    }
+
         full_dict = {
             "type": user_type,
             "text": msg.get("text"),
@@ -156,6 +174,9 @@ class Messages:
             },
             "reply": full_reply,
             "attaches": msg.get("attaches"),
+            "inline_keyboard": inline_keyboard,
+            "reply_keyboard": reply_keyboard,
+            "buttons": inline_keyboard["buttons"] if inline_keyboard else (reply_keyboard["buttons"] if reply_keyboard else None),
         }
         return full_dict
 
@@ -800,4 +821,80 @@ class Messages:
         return await ws.request(
             MessageOpcode.GET_USER_PHOTOS,
             {"contactId": uid, "from": from_index},
+        )
+
+    # === INTERACTIVE KEYBOARDS & BOT COMMANDS ===
+
+    async def click_inline_button(
+        self,
+        ws: Ws,
+        callback_id: str,
+        payload: str,
+        button_type: str = "CALLBACK",
+        timeout: float = 5.0,
+    ) -> dict:
+        """Click an inline keyboard button (Opcode 118) in OK.ru messenger.
+
+        Args:
+            ws: Connected WebSocket instance.
+            callback_id: callbackId from the message's INLINE_KEYBOARD attach.
+            payload: Payload string associated with the button.
+            button_type: Button type (default: 'CALLBACK').
+            timeout: Response timeout in seconds.
+
+        Returns:
+            Server response (e.g. {'success': True}).
+        """
+        return await ws.request(
+            MessageOpcode.CALLBACK_ANSWER,
+            {
+                "callbackId": callback_id,
+                "type": button_type,
+                "payload": payload,
+            },
+            timeout=timeout,
+        )
+
+    async def send_inline_keyboard(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        message_text: str,
+        keyboard: Any,
+        parse_mode: str | None = None,
+        group_token: str | None = None,
+    ) -> dict:
+        """Send a message with an inline keyboard.
+
+        If group_token is provided, dispatches via the official OK.ru Bot API gateway.
+        Otherwise dispatches via WebSocket attachment.
+        """
+        cid = self._clean_chat_id(chat_id)
+        attach = keyboard.to_attach() if hasattr(keyboard, "to_attach") else keyboard
+
+        if group_token:
+            url = f"https://api.ok.ru/graph.chat.messages?access_token={group_token}"
+            bot_api_body = {
+                "recipient": {"chat_id": f"chat:{cid}" if isinstance(cid, int) and cid < 0 else str(cid)},
+                "message": {
+                    "text": message_text,
+                    "attachment": keyboard.to_bot_api() if hasattr(keyboard, "to_bot_api") else attach,
+                },
+            }
+            async with self._session.post(url, json=bot_api_body) as resp:
+                return await resp.json()
+
+        now_cid = int(time.time() * 1000)
+        elements = await self.parse_html(message_text) if parse_mode == "html" else None
+        return await ws.request(
+            MessageOpcode.SEND_MESSAGE,
+            {
+                "chatId": cid,
+                "message": {
+                    "cid": now_cid,
+                    "text": message_text,
+                    "elements": elements,
+                    "attaches": [attach],
+                },
+            },
         )

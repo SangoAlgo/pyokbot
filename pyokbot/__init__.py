@@ -15,10 +15,16 @@ from .errors import (
     UploadError,
     WebSocketError,
 )
+from .keyboard import (
+    InlineButton,
+    InlineKeyboard,
+    ReplyButton,
+    ReplyKeyboard,
+)
 from .logging_config import logger
 from .opcodes import MessageOpcode
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 __all__ = [
     "Vanus",
     "MessageOpcode",
@@ -35,4 +41,8 @@ __all__ = [
     "progress_frames",
     "spinner_frames",
     "reveal_frames",
+    "InlineButton",
+    "InlineKeyboard",
+    "ReplyButton",
+    "ReplyKeyboard",
 ]
