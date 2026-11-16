@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.2.0] - 2026-11-16
+
+### Added
+- **Rate Limit & Flood Control Handling**:
+  - Added `RateLimitError` inheriting from `APIError` with parsed `retry_after` seconds.
+  - Automatic detection of OK.ru 60-requests-per-minute flood limits in `ws.request()` and `messages.edit_message_text`.
+- **Text Animation Engine (Telegram Userbot Style)**:
+  - `TextAnimator` engine (`pyokbot/animator.py`):
+    - Configurable frame sequences, interval timing, and parse modes.
+    - Automatic exponential/linear backoff and retry on `RateLimitError`.
+    - Background execution (`anim.start_background()`) and cancellation (`anim.stop(final_text=...)`).
+    - Skipping of identical frames (`ignore_identical=True`).
+    - Custom per-frame hook (`on_frame(index, text)`).
+  - Animation frame generators:
+    - `typewriter_frames`: Smooth typewriter typing effect with customizable cursor glyph and step size.
+    - `progress_frames`: Visual progress bars with percentage and customizable characters (`🟩▫️`, `█░`, etc.).
+    - `spinner_frames`: Rotating loading spinners (braille, emoji clocks, ascii).
+    - `reveal_frames`: Text reveal animations from masked strings.
+- **Client Animation Convenience Methods**:
+  - `bot.animate_text(chat_id, message_id, frames, interval=0.5, auto_retry=True)`
+  - `bot.animate_typewriter(chat_id, message_id, text, interval=0.2, step=1, cursor="▌")`
+  - `bot.animate_progress(chat_id, message_id, total_steps=10, interval=0.5, prefix="Progress: ")`
+  - `bot.create_animator(...)` for custom scheduled or background animation tasks.
+- **Test Suite**: Added `tests/test_animator.py` bringing total unit tests to 80 (100% passing).
+
 ## [1.1.0] - 2026-11-16
 
 ### Fixed

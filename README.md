@@ -50,9 +50,13 @@ asyncio.run(main())
 | 🎯 **Filters** | Route by content type, text, or sender (user/bot) |
 | 🖼️ **Media** | Send photos, videos, files, voice messages |
 | 📝 **HTML** | Bold, italic, code, headings, links with `parse_mode="html"` |
-| 👥 **Chat admin** | Pin, edit, delete, clear, change title/photo, kick |
+| 👥 **Chat admin** | Pin, edit, delete, clear, change title/photo, kick, join/leave |
+| 👍 **Reactions** | Set, remove, list reactions & `@bot.on_reaction()` listener |
+| 🎬 **Animations** | Telegram userbot style text animations (typewriter, progress bars) |
+| 🛡️ **Flood control** | Automatic detection, backoff & retry on OK.ru rate limits |
+| 🔔 **Events** | Typing indicators, read receipts, presence & raw opcode listeners |
 | ⌨️ **Typing** | Show "bot is typing..." before responding |
-| 🔁 **Auto-reconnect** | Reconnects when connection drops |
+| 🔁 **Auto-reconnect** | Reconnects when connection drops (with raw PING keepalive) |
 | 💾 **Cache** | User profiles cached with 1-hour TTL |
 | 🧹 **Clean shutdown** | Ctrl+C handled gracefully |
 
@@ -168,6 +172,69 @@ await bot.send_reply(message, "done!")
 ```
 </details>
 
+<details>
+<summary><b>👍 Reactions</b> - emoji reactions on messages</summary>
+
+```python
+# Set or remove reactions
+await bot.set_reaction(chat_id, message_id, reaction="🔥")
+await bot.remove_reaction(chat_id, message_id)
+
+# Fetch reactions
+reactions = await bot.get_reactions(chat_id, [message_id])
+
+# Listen for incoming reaction events
+@bot.on_reaction()
+async def handle_reaction(event):
+    print(f"User {event.userId} reacted {event.reaction} to {event.messageId}")
+```
+</details>
+
+<details>
+<summary><b>🎬 Animations (Telegram Userbot Style)</b> - typewriter & progress bars</summary>
+
+```python
+# Typewriter effect
+await bot.animate_typewriter(
+    chat_id=message.chat.id,
+    message_id=msg_id,
+    text="Hello from pyokbot!",
+    interval=0.2,
+    step=2,
+    cursor="▌",
+)
+
+# Animated progress bar
+await bot.animate_progress(
+    chat_id=message.chat.id,
+    message_id=msg_id,
+    total_steps=10,
+    interval=0.4,
+    prefix="Processing: ",
+    filled_char="🟩",
+    empty_char="▫️",
+)
+```
+</details>
+
+<details>
+<summary><b>🔔 Real-Time Events</b> - typing, read receipts, presence</summary>
+
+```python
+@bot.on_typing()
+async def on_typing(event):
+    print(f"User {event.userId} is typing in {event.chatId}...")
+
+@bot.on_read()
+async def on_read(event):
+    print(f"Message read receipt: {event}")
+
+@bot.on_presence()
+async def on_presence(event):
+    print(f"User {event.userId} presence changed: {event.presence}")
+```
+</details>
+
 ---
 
 ## 🧠 How handlers work
@@ -208,6 +275,7 @@ Ready-to-run bots in the [`examples/`](examples/) directory:
 | [`filter_demo_bot.py`](examples/filter_demo_bot.py) | All filter types (commands, text, content-type) |
 | [`html_demo_bot.py`](examples/html_demo_bot.py) | HTML formatting with all tags |
 | [`chat_admin_bot.py`](examples/chat_admin_bot.py) | Pin, edit, clear, kick, change title |
+| [`animation_bot.py`](examples/animation_bot.py) | Telegram-style typewriter, progress bar & spinner animations |
 
 ```bash
 python examples/echobot.py YOUR_AUTHCODE

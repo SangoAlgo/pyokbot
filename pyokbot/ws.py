@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
 import websockets
 
-from .errors import APIError, AuthenticationError, TimeoutError, WebSocketError
+from .errors import APIError, AuthenticationError, RateLimitError, TimeoutError, WebSocketError
 from .logging_config import logger
 from .opcodes import MessageOpcode
 
@@ -121,6 +122,19 @@ class Ws:
             p = res.get("payload", {})
             if res.get("cmd") == 3 or (isinstance(p, dict) and p.get("error")):
                 err_msg = p.get("message") or p.get("error") if isinstance(p, dict) else str(p)
+                err_str = str(err_msg)
+                if "Too many requests" in err_str or "retry after" in err_str.lower() or "errors.event.unavailable" in err_str:
+                    retry_after = 2
+                    match = re.search(r"retry after (\d+)", err_str, re.IGNORECASE)
+                    if match:
+                        try:
+                            retry_after = int(match.group(1))
+                        except ValueError:
+                            pass
+                    raise RateLimitError(
+                        f"OK.ru API rate limit (opcode {opcode}): {err_msg}",
+                        retry_after=retry_after,
+                    )
                 raise APIError(f"OK.ru API error (opcode {opcode}): {err_msg}")
             return res
         except asyncio.TimeoutError:

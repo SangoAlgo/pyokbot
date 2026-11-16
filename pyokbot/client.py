@@ -11,6 +11,13 @@ from typing import Callable
 import aiohttp
 from munch import Munch
 
+from .animator import (
+    TextAnimator,
+    progress_frames,
+    reveal_frames,
+    spinner_frames,
+    typewriter_frames,
+)
 from .logging_config import logger
 from .login import Login
 from .messages import Messages
@@ -349,13 +356,13 @@ class Vanus:
 
     async def edit_message_text(
         self,
-        chat_id: str,
+        chat_id: str | int,
         message_id: str,
         message_text: str,
         parse_mode: str | None = None,
-    ) -> None:
+    ) -> bool:
         """Edit a sent message."""
-        await self.messages.edit_message_text(
+        return await self.messages.edit_message_text(
             self.ws, chat_id, message_id, message_text, parse_mode
         )
 
@@ -703,3 +710,105 @@ class Vanus:
             self.event_handlers[opcode].append(func)
             return func
         return decorator
+
+    # === ANIMATION (TELEGRAM USERBOT STYLE) ===
+
+    def create_animator(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        frames: Any,
+        interval: float = 0.5,
+        auto_retry: bool = True,
+        max_retries: int = 5,
+        parse_mode: str | None = None,
+        ignore_identical: bool = True,
+        on_frame: Any = None,
+    ) -> TextAnimator:
+        """Create a TextAnimator instance without running it immediately."""
+        return TextAnimator(
+            bot=self,
+            chat_id=chat_id,
+            message_id=message_id,
+            frames=frames,
+            interval=interval,
+            auto_retry=auto_retry,
+            max_retries=max_retries,
+            parse_mode=parse_mode,
+            ignore_identical=ignore_identical,
+            on_frame=on_frame,
+        )
+
+    async def animate_text(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        frames: Any,
+        interval: float = 0.5,
+        auto_retry: bool = True,
+        max_retries: int = 5,
+        parse_mode: str | None = None,
+    ) -> TextAnimator:
+        """Animate message text through a sequence of frames.
+
+        Handles OK.ru rate limits automatically with backoff and retry.
+        """
+        anim = self.create_animator(
+            chat_id=chat_id,
+            message_id=message_id,
+            frames=frames,
+            interval=interval,
+            auto_retry=auto_retry,
+            max_retries=max_retries,
+            parse_mode=parse_mode,
+        )
+        await anim.run()
+        return anim
+
+    async def animate_typewriter(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        text: str,
+        interval: float = 0.2,
+        step: int = 1,
+        cursor: str = "▌",
+        auto_retry: bool = True,
+    ) -> TextAnimator:
+        """Animate text with a typewriter effect, progressively revealing characters."""
+        frames = typewriter_frames(text, step=step, cursor=cursor)
+        return await self.animate_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            frames=frames,
+            interval=interval,
+            auto_retry=auto_retry,
+        )
+
+    async def animate_progress(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        total_steps: int = 10,
+        interval: float = 0.5,
+        prefix: str = "",
+        suffix: str = "",
+        filled_char: str = "🟩",
+        empty_char: str = "▫️",
+        auto_retry: bool = True,
+    ) -> TextAnimator:
+        """Animate a progress bar in a message."""
+        frames = progress_frames(
+            total_steps=total_steps,
+            prefix=prefix,
+            suffix=suffix,
+            filled_char=filled_char,
+            empty_char=empty_char,
+        )
+        return await self.animate_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            frames=frames,
+            interval=interval,
+            auto_retry=auto_retry,
+        )

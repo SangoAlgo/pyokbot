@@ -25,6 +25,18 @@ class APIError(PyokbotError):
     """
 
 
+class RateLimitError(APIError):
+    """Raised when OK.ru rate limit / flood control is encountered.
+
+    Attributes:
+        retry_after: Suggested seconds to wait before retrying.
+    """
+
+    def __init__(self, message: str, retry_after: int = 2) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class WebSocketError(PyokbotError):
     """The WebSocket connection dropped or refused."""
 

@@ -480,7 +480,7 @@ class Messages:
     async def edit_message_text(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         message_id: str,
         message_text: str,
         parse_mode: str | None = None,
@@ -490,17 +490,17 @@ class Messages:
             result = await self.parse_html(message_text)
             message_text = result[1]
             parse_elements = result[0]
-        await ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.EDIT_MESSAGE,
-            "payload": {
-                "chatId": chat_id,
-                "messageId": message_id,
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        await ws.request(
+            MessageOpcode.EDIT_MESSAGE,
+            {
+                "chatId": cid,
+                "messageId": str(message_id),
                 "text": message_text,
                 "elements": parse_elements,
-                "attachments": []
-            }
-        }))
+                "attachments": [],
+            },
+        )
         return True
 
     async def pin_chat_message(self, ws: Ws, chat_id: str, message_id: str) -> bool:

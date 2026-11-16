@@ -5,7 +5,7 @@ from pyokbot.opcodes import MessageOpcode
 from pyokbot.ws import Ws
 from pyokbot.login import Login
 from pyokbot.messages import Messages
-from pyokbot.errors import APIError, TimeoutError
+from pyokbot.errors import APIError, RateLimitError, TimeoutError
 
 
 class MockConn:
@@ -87,6 +87,28 @@ async def test_ws_request_api_error(mock_ws):
     with pytest.raises(APIError) as exc_info:
         await mock_ws.request(MessageOpcode.SET_REACTION, timeout=1.0)
     assert "Expected map at 11" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_ws_request_rate_limit_error(mock_ws):
+    async def simulate_rate_limit():
+        await asyncio.sleep(0.01)
+        mock_ws._pending_requests[1].set_result({
+            "ver": 10,
+            "cmd": 3,
+            "seq": 1,
+            "opcode": MessageOpcode.EDIT_MESSAGE,
+            "payload": {
+                "error": "errors.event.unavailable",
+                "message": "Key: errors.event.unavailable Too many requests, retry after 5 seconds. Allowed 60 requests per minute"
+            }
+        })
+
+    asyncio.create_task(simulate_rate_limit())
+    with pytest.raises(RateLimitError) as exc_info:
+        await mock_ws.request(MessageOpcode.EDIT_MESSAGE, timeout=1.0)
+    assert exc_info.value.retry_after == 5
+    assert "rate limit" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
