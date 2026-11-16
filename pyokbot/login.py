@@ -15,9 +15,9 @@ class Login:
 
     def __init__(self):
         self.BASE_URL = "https://ok.ru"
-        self.WS_URL = "wss://api-messages-ws.ok.ru/websocket?okweb=true&autoinit=true&version=1.10.16"
-        self.PING_INTERVAL = 30
-        self.RECONNECT_DELAY = 10
+        self.WS_URL = "wss://api-messages-ws.ok.ru/websocket?okweb=true&autoinit=true&version=1.10.28"
+        self.PING_INTERVAL = 25
+        self.RECONNECT_DELAY = 5
         self.UA = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -25,7 +25,7 @@ class Login:
         )
         self.WS_USER_AGENT = {
             "deviceType": "OKWEB",
-            "appVersion": "1.10.16",
+            "appVersion": "1.10.28",
             "osVersion": "Windows",
             "locale": "ru",
             "deviceName": "Chrome",

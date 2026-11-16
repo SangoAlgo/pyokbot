@@ -34,6 +34,11 @@ class Vanus:
         self._cache_path = str(Path.home() / ".pyokbot_cache.json")
         self.users_info_cache: dict = self.get_cache_and_update(self._cache_path)
         self._handled_msg_ids: set = set()
+        self.reaction_handlers: list[Callable] = []
+        self.typing_handlers: list[Callable] = []
+        self.read_handlers: list[Callable] = []
+        self.presence_handlers: list[Callable] = []
+        self.event_handlers: dict[int, list[Callable]] = {}
         self.login.start_login(auth_code)
         self.ws = Ws(self.login)
         self.bot_info: dict = {}
@@ -67,50 +72,100 @@ class Vanus:
         await self.stop()
 
     async def polling(self) -> None:
-        """Start processing messages from the WebSocket queue.
+        """Start processing messages and events from the WebSocket queue.
 
         Handlers are checked in registration order and the first match wins.
         """
 
-        async def safe_call(func: Callable, msg: Munch) -> None:
+        async def safe_call(func: Callable, data: Any) -> None:
             try:
-                await func(msg)
+                await func(data)
             except Exception:
                 logger.error(f"[HANDLER ERROR] {traceback.format_exc()}")
 
         try:
             while True:
-                msg = await self.ws._msg_queue.get()
-                if not msg or msg.get("opcode") != MessageOpcode.INCOMING_MESSAGE:
-                    continue
                 try:
-                    original_message = self.messages.generate_message_object(msg)
-                except Exception as e:
-                    logger.warning(f"Failed to parse incoming message: {e}")
-                    continue
-                if original_message is None:
-                    continue
-                msg_id = original_message.get("id")
-                if msg_id and msg_id in self._handled_msg_ids:
-                    continue
-                if msg_id:
-                    self._handled_msg_ids.add(msg_id)
-                if not self.ws.handles_list:
-                    continue
-                for handler in self.ws.handles_list:
-                    func = handler.get("func")
-                    _filter = handler.get("filters")
-                    if func is None or _filter is None:
-                        continue
-                    try:
-                        filtered_message = self.message_filter(_filter, original_message)
-                    except Exception as e:
-                        logger.warning(f"Filter error in handler {func}: {e}")
-                        continue
-                    if filtered_message is None:
-                        continue
-                    asyncio.create_task(safe_call(func, filtered_message))
+                    msg = await self.ws._msg_queue.get()
+                except asyncio.CancelledError:
                     break
+
+                if not msg:
+                    continue
+
+                op = msg.get("opcode")
+                p = msg.get("payload", {})
+
+                # 1. Custom raw opcode event handlers
+                if op in self.event_handlers:
+                    for h in self.event_handlers[op]:
+                        asyncio.create_task(safe_call(h, Munch.fromDict(msg) if isinstance(msg, dict) else msg))
+
+                # 2. Reactions
+                if op in (MessageOpcode.INCOMING_REACTION, MessageOpcode.YOUR_REACTION):
+                    if self.reaction_handlers:
+                        reaction_data = Munch.fromDict(p) if isinstance(p, dict) else p
+                        for h in self.reaction_handlers:
+                            asyncio.create_task(safe_call(h, reaction_data))
+                    continue
+
+                # 3. User Typing
+                if op == MessageOpcode.USER_TYPING:
+                    if self.typing_handlers:
+                        typing_data = Munch.fromDict(p) if isinstance(p, dict) else p
+                        for h in self.typing_handlers:
+                            asyncio.create_task(safe_call(h, typing_data))
+                    continue
+
+                # 4. Read Receipt
+                if op == MessageOpcode.READ_RECEIPT:
+                    if self.read_handlers:
+                        read_data = Munch.fromDict(p) if isinstance(p, dict) else p
+                        for h in self.read_handlers:
+                            asyncio.create_task(safe_call(h, read_data))
+                    continue
+
+                # 5. Presence Update
+                if op == MessageOpcode.PRESENCE_UPDATE:
+                    if self.presence_handlers:
+                        presence_data = Munch.fromDict(p) if isinstance(p, dict) else p
+                        for h in self.presence_handlers:
+                            asyncio.create_task(safe_call(h, presence_data))
+                    continue
+
+                # 6. Incoming Messages
+                if op == MessageOpcode.INCOMING_MESSAGE:
+                    try:
+                        original_message = self.messages.generate_message_object(msg)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse incoming message: {e}")
+                        continue
+                    if original_message is None:
+                        continue
+                    msg_id = original_message.get("id")
+                    if msg_id and msg_id in self._handled_msg_ids:
+                        continue
+                    if msg_id:
+                        self._handled_msg_ids.add(msg_id)
+                        if len(self._handled_msg_ids) > 10000:
+                            # Prune to prevent memory leaks
+                            self._handled_msg_ids = set(list(self._handled_msg_ids)[-5000:])
+                    if not self.ws.handles_list:
+                        continue
+                    for handler in self.ws.handles_list:
+                        func = handler.get("func")
+                        _filter = handler.get("filters")
+                        if func is None or _filter is None:
+                            continue
+                        try:
+                            filtered_message = self.message_filter(_filter, original_message)
+                        except Exception as e:
+                            logger.warning(f"Filter error in handler {func}: {e}")
+                            continue
+                        if filtered_message is None:
+                            continue
+                        asyncio.create_task(safe_call(func, filtered_message))
+                        break
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -210,33 +265,33 @@ class Vanus:
 
     # === CHAT MANAGEMENT ===
 
-    async def get_chat_info(self, chat_id: str) -> dict:
+    async def get_chat_info(self, chat_id: str | int) -> dict:
         """Fetch chat metadata (title, members, messages, pinned message)."""
-        await self.ws._conn.send(json.dumps({
-            "ver": 10, "cmd": 0, "seq": 24,
-            "opcode": MessageOpcode.CHAT_INFO,
-            "payload": {"chatIds": [chat_id]}
-        }))
-        response = await self.ws.wait_for_message(MessageOpcode.CHAT_INFO)
-        if response is None:
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        response = await self.ws.request(
+            MessageOpcode.CHAT_INFO,
+            {"chatIds": [cid]}
+        )
+        chats = response.get("payload", {}).get("chats", [{}])
+        if not chats:
             return {}
-        response = response.get("payload", {}).get("chats", [{}])[0]
-        participants = response.get("participants") or {}
-        last_msg = response.get("lastMessage") or {}
+        resp = chats[0]
+        participants = resp.get("participants") or {}
+        last_msg = resp.get("lastMessage") or {}
         attaches = self.parse_attaches_to_obj(last_msg.get("attaches"))
         result: dict = {
-            "chat_id": chat_id,
-            "title": response.get("title"),
-            "status": response.get("status"),
-            "link": response.get("link"),
-            "created_time": response.get("created"),
-            "owner": response.get("owner") if response.get("owner") != 0 else "unavailable",
+            "chat_id": str(chat_id),
+            "title": resp.get("title"),
+            "status": resp.get("status"),
+            "link": resp.get("link"),
+            "created_time": resp.get("created"),
+            "owner": resp.get("owner") if resp.get("owner") != 0 else "unavailable",
             "images": {
-                "small": response.get("iconUrl"),
-                "full": response.get("fullIconUrl"),
+                "small": resp.get("iconUrl"),
+                "full": resp.get("fullIconUrl"),
             },
             "members": {
-                "count": response.get("participantsCount"),
+                "count": resp.get("participantsCount"),
                 "list": list(participants.keys()),
             },
             "messages": {
@@ -246,10 +301,10 @@ class Vanus:
                     "text": last_msg.get("text"),
                     "sender_id": last_msg.get("sender"),
                 },
-                "count": response.get("messagesCount"),
+                "count": resp.get("messagesCount"),
             },
         }
-        pinned = response.get("pinnedMessage")
+        pinned = resp.get("pinnedMessage")
         if pinned is not None:
             result["pinned"] = {
                 "id": pinned.get("id"),
@@ -311,6 +366,96 @@ class Vanus:
     async def tst_user(self, user_id: str) -> dict:
         """Check if a user is currently logged in."""
         return await self.login.tst_user(user_id)
+
+    # === REACTIONS ===
+
+    async def set_reaction(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        reaction: str = "👍",
+    ) -> dict:
+        """Add an emoji reaction to a message."""
+        return await self.messages.set_reaction(self.ws, chat_id, message_id, reaction)
+
+    async def remove_reaction(
+        self,
+        chat_id: str | int,
+        message_id: str,
+    ) -> dict:
+        """Remove a reaction from a message."""
+        return await self.messages.remove_reaction(self.ws, chat_id, message_id)
+
+    async def get_reactions(
+        self,
+        chat_id: str | int,
+        message_ids: list[str],
+    ) -> dict:
+        """Get reactions for messages."""
+        return await self.messages.get_reactions(self.ws, chat_id, message_ids)
+
+    async def get_reacted_users(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        reaction: str = "👍",
+        marker: int | None = None,
+        count: int = 50,
+    ) -> dict:
+        """Get users who reacted to a message."""
+        return await self.messages.get_reacted_users(
+            self.ws, chat_id, message_id, reaction, marker, count
+        )
+
+    # === READ STATUS & CHAT HISTORY ===
+
+    async def mark_as_read(
+        self,
+        chat_id: str | int,
+        message_id: str,
+        mark: int | None = None,
+    ) -> dict:
+        """Mark a message as read."""
+        return await self.messages.mark_as_read(self.ws, chat_id, message_id, mark)
+
+    async def get_chat_history(
+        self,
+        chat_id: str | int,
+        from_time: int | None = None,
+        count: int = 25,
+    ) -> dict:
+        """Get chat message history."""
+        return await self.messages.get_chat_history(self.ws, chat_id, from_time, backward=count)
+
+    # === CHAT INVITATIONS & PARTICIPANTS ===
+
+    async def join_chat(self, link: str) -> dict:
+        """Join a chat by invite link."""
+        return await self.messages.join_chat(self.ws, link)
+
+    async def leave_chat(self, chat_id: str | int) -> dict:
+        """Leave a chat."""
+        return await self.messages.leave_chat(self.ws, chat_id)
+
+    async def add_chat_members(
+        self,
+        chat_id: str | int,
+        user_ids: list[str | int],
+    ) -> dict:
+        """Add participants to a chat."""
+        return await self.messages.add_chat_members(self.ws, chat_id, user_ids)
+
+    async def get_chat_participants(
+        self,
+        chat_id: str | int,
+        last_event_time: int | None = None,
+    ) -> dict:
+        """Get chat participants."""
+        return await self.messages.get_chat_participants(self.ws, chat_id, last_event_time)
+
+    async def subscribe_chat(self, chat_id: str | int, subscribe: bool = True) -> dict:
+        """Subscribe or unsubscribe from live chat updates."""
+        return await self.messages.subscribe_chat(self.ws, chat_id, subscribe)
 
     # === USER INFO ===
 
@@ -503,5 +648,58 @@ class Vanus:
                     "commands": commands,
                 }
             })
+            return func
+        return decorator
+
+    def on_reaction(self) -> Callable:
+        """Decorator to register a reaction event handler.
+
+        Callback receives the reaction payload (Munch) containing
+        chatId, messageId, reactionInfo (counters, yourReaction, totalCount).
+        """
+        def decorator(func: Callable) -> Callable:
+            self.reaction_handlers.append(func)
+            return func
+        return decorator
+
+    def on_typing(self) -> Callable:
+        """Decorator to register a user typing indicator event handler.
+
+        Callback receives the typing payload (Munch) containing chatId, userId.
+        """
+        def decorator(func: Callable) -> Callable:
+            self.typing_handlers.append(func)
+            return func
+        return decorator
+
+    def on_read(self) -> Callable:
+        """Decorator to register a read receipt event handler.
+
+        Callback receives the read receipt payload (Munch) containing chatId, userId, mark.
+        """
+        def decorator(func: Callable) -> Callable:
+            self.read_handlers.append(func)
+            return func
+        return decorator
+
+    def on_presence(self) -> Callable:
+        """Decorator to register a user presence / online event handler.
+
+        Callback receives presence payload (Munch) containing userId, presence.
+        """
+        def decorator(func: Callable) -> Callable:
+            self.presence_handlers.append(func)
+            return func
+        return decorator
+
+    def on_event(self, opcode: int) -> Callable:
+        """Decorator to register a custom raw opcode event handler.
+
+        Callback receives the full raw packet message.
+        """
+        def decorator(func: Callable) -> Callable:
+            if opcode not in self.event_handlers:
+                self.event_handlers[opcode] = []
+            self.event_handlers[opcode].append(func)
             return func
         return decorator

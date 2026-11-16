@@ -18,6 +18,11 @@ def sample_vanus():
     vanus._session = None
     vanus._ws_task = None
     vanus._handled_msg_ids = set()
+    vanus.reaction_handlers = []
+    vanus.typing_handlers = []
+    vanus.read_handlers = []
+    vanus.presence_handlers = []
+    vanus.event_handlers = {}
     vanus._cache_path = "/tmp/test_cache.json"
     vanus.users_info_cache = {}
     return vanus

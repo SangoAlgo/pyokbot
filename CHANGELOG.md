@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.1.0] - 2026-11-16
+
+### Fixed
+- **WebSocket Session Stability**: Fixed premature `PING` before auth handshake and added mandatory raw `PING <token> <timestamp>` frame after `AUTH` packet (prevents 15-second disconnection drops).
+- **Keepalive Interval**: Set keepalive ping interval to 25s matching the official OK.ru web client.
+- **Protocol Version**: Upgraded WebSocket connection URL to `version=1.10.28`.
+- **RPC Sequence Correlation**: Replaced single-queue `wait_for_message` with sequence-correlated (`seq`) `asyncio.Future` mapping via `ws.request()`. Prevents race conditions, timeouts, and dropped packets in active group chats.
+- **Memory Leak Protection**: Handled message IDs in `polling()` pruned to prevent unbounded memory growth.
+- **Polling Crash Resilience**: Handled packet processing errors gracefully in `polling()` to prevent loop crashes on unexpected packets.
+
+### Added
+- **Reactions API**:
+  - `set_reaction(chat_id, message_id, reaction="👍")` (Opcode 178)
+  - `remove_reaction(chat_id, message_id)` (Opcode 179)
+  - `get_reactions(chat_id, message_ids)` (Opcode 180)
+  - `get_reacted_users(chat_id, message_id, reaction, marker, count)` (Opcode 181)
+  - `@bot.on_reaction()` decorator for handling incoming reaction events (Opcodes 155, 156)
+- **Chat Management**:
+  - `join_chat(link)` (Opcode 57)
+  - `leave_chat(chat_id)` (Opcode 58)
+  - `add_chat_members(chat_id, user_ids)` (Opcode 59)
+  - `get_chat_history(chat_id, from_time, count)` (Opcode 49)
+  - `get_chat_participants(chat_id, last_event_time)` (Opcode 61)
+  - `subscribe_chat(chat_id, subscribe)` (Opcode 75)
+- **Real-Time Event Listeners**:
+  - `@bot.on_typing()` decorator for user typing indicators (Opcode 129)
+  - `@bot.on_read()` decorator for message read receipts (Opcode 130)
+  - `@bot.on_presence()` decorator for user presence/online updates (Opcode 132)
+  - `@bot.on_event(opcode)` decorator for custom raw opcode interception
+  - `mark_as_read(chat_id, message_id)` (Opcode 50)
+- **Opcode Registry**: Added 20+ newly documented opcodes to `MessageOpcode`.
+- **Unit & Integration Tests**: Added test coverage in `tests/test_new_features.py` (67/67 tests passing).
+
 ## [0.2.0] - 2026-07-24
 
 ### Added

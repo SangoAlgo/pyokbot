@@ -188,25 +188,23 @@ class Messages:
     async def send_message(
         self,
         ws: Ws,
-        chat_id: str,
+        chat_id: str | int,
         message_text: str,
         parse_mode: str | None = None,
-    ) -> None:
+    ) -> int:
         parse_elements: list = []
         if parse_mode == "html":
             result = await self.parse_html(message_text)
             message_text = result[1]
             parse_elements = result[0]
-        await ws._conn.send(json.dumps({
-            "ver": 10,
-            "cmd": 0,
-            "seq": random.randint(0, 9999),
-            "opcode": MessageOpcode.SEND_MESSAGE,
-            "payload": {
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.send_packet(
+            MessageOpcode.SEND_MESSAGE,
+            {
                 "notify": True,
                 "type": "USER",
                 "attachMEL": True,
-                "chatId": chat_id,
+                "chatId": cid,
                 "message": {
                     "cid": int(time.time() * 1000),
                     "text": message_text,
@@ -214,7 +212,7 @@ class Messages:
                     "elements": parse_elements,
                 }
             }
-        }))
+        )
 
     async def send_reply(
         self,
@@ -611,3 +609,162 @@ class Messages:
             }
         }))
         return True
+
+    # === REACTIONS ===
+
+    async def set_reaction(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        message_id: str,
+        reaction: str = "👍",
+    ) -> dict:
+        """Set an emoji reaction on a message in a chat."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(
+            MessageOpcode.SET_REACTION,
+            {
+                "chatId": cid,
+                "messageId": str(message_id),
+                "reaction": {"reactionType": "EMOJI", "id": reaction},
+            },
+        )
+
+    async def remove_reaction(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        message_id: str,
+    ) -> dict:
+        """Remove a reaction from a message."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(
+            MessageOpcode.REMOVE_REACTION,
+            {
+                "chatId": cid,
+                "messageId": str(message_id),
+            },
+        )
+
+    async def get_reactions(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        message_ids: list[str],
+    ) -> dict:
+        """Fetch reactions for a list of message IDs."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(
+            MessageOpcode.GET_REACTIONS,
+            {
+                "chatId": cid,
+                "messageIds": [str(m) for m in message_ids],
+            },
+        )
+
+    async def get_reacted_users(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        message_id: str,
+        reaction: str = "👍",
+        marker: int | None = None,
+        count: int = 50,
+    ) -> dict:
+        """Fetch list of users who reacted to a message."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        payload: dict[str, Any] = {
+            "chatId": cid,
+            "messageId": str(message_id),
+            "reaction": reaction,
+            "count": count,
+        }
+        if marker is not None:
+            payload["marker"] = marker
+        return await ws.request(MessageOpcode.GET_REACTED_USERS, payload)
+
+    # === READ STATUS & CHAT HISTORY ===
+
+    async def mark_as_read(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        message_id: str,
+        mark: int | None = None,
+    ) -> dict:
+        """Mark a message as read."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(
+            MessageOpcode.READ_MESSAGE,
+            {
+                "chatId": cid,
+                "messageId": str(message_id),
+                "mark": mark or int(time.time() * 1000),
+                "type": "READ_MESSAGE",
+            },
+        )
+
+    async def get_chat_history(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        from_time: int | None = None,
+        count: int = 25,
+        backward: int | None = None,
+        forward: int = 0,
+    ) -> dict:
+        """Fetch message history for a chat."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        limit = backward if backward is not None else count
+        return await ws.request(
+            MessageOpcode.CHAT_HISTORY,
+            {
+                "chatId": cid,
+                "from": from_time or int(time.time() * 1000),
+                "backward": limit,
+                "forward": forward,
+            },
+        )
+
+    # === CHAT INVITATIONS & PARTICIPANTS ===
+
+    async def join_chat(self, ws: Ws, link: str) -> dict:
+        """Join a chat via invite link."""
+        return await ws.request(MessageOpcode.JOIN_CHAT, {"link": link})
+
+    async def leave_chat(self, ws: Ws, chat_id: str | int) -> dict:
+        """Leave a chat."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(MessageOpcode.LEAVE_CHAT, {"chatId": cid})
+
+    async def add_chat_members(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        user_ids: list[str | int],
+    ) -> dict:
+        """Add users to a chat."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        uids = [int(u) if str(u).isdigit() else u for u in user_ids]
+        return await ws.request(MessageOpcode.ADD_MEMBERS, {"chatId": cid, "userIds": uids})
+
+    async def get_chat_participants(
+        self,
+        ws: Ws,
+        chat_id: str | int,
+        last_event_time: int | None = None,
+    ) -> dict:
+        """Get participant list of a chat."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(
+            MessageOpcode.CHAT_PARTICIPANTS,
+            {"chatId": cid, "lastEventTime": last_event_time or 0},
+        )
+
+    async def subscribe_chat(self, ws: Ws, chat_id: str | int, subscribe: bool = True) -> dict:
+        """Subscribe or unsubscribe to live chat events."""
+        cid = int(chat_id) if isinstance(chat_id, str) and (chat_id.isdigit() or (chat_id.startswith("-") and chat_id[1:].isdigit())) else chat_id
+        return await ws.request(
+            MessageOpcode.SUBSCRIBE_CHAT,
+            {"chatId": cid, "subscribe": subscribe},
+        )
